@@ -1,28 +1,23 @@
 import 'package:flutter/material.dart';
+import 'screens/home_screen.dart';
 
 void main() {
-  runApp(HomeworkAI());
+  runApp(const HomeworkAI());
 }
 
 class HomeworkAI extends StatelessWidget {
+  const HomeworkAI({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Homework AI',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: HomeScreen(),
-    );
-  }
-}
-
-class HomeScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text("Homework AI")),
-      body: Center(
-        child: ElevatedButton(onPressed: () {}, child: Text("Scan Homework")),
+      debugShowCheckedModeBanner: false,
+      title: "Homework AI",
+      theme: ThemeData(
+        scaffoldBackgroundColor: const Color(0xFFF6F7FB),
+        fontFamily: "Roboto",
       ),
+      home: const HomeScreen(),
     );
   }
 }
