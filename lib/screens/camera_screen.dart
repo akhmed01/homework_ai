@@ -3,6 +3,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'dart:io';
 
+import 'result_screen.dart';
+
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
 
@@ -12,8 +14,8 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen> {
   File? image;
-  String extractedText = "";
 
+  // Opens camera and captures image
   Future pickImage() async {
     final pickedFile = await ImagePicker().pickImage(
       source: ImageSource.camera,
@@ -27,9 +29,11 @@ class _CameraScreenState extends State<CameraScreen> {
       image = imageFile;
     });
 
+    // Process OCR
     processImage(imageFile);
   }
 
+  // OCR text recognition
   Future processImage(File imageFile) async {
     final inputImage = InputImage.fromFile(imageFile);
 
@@ -39,16 +43,24 @@ class _CameraScreenState extends State<CameraScreen> {
       inputImage,
     );
 
-    setState(() {
-      extractedText = recognizedText.text;
-    });
-
     textRecognizer.close();
+
+    String extractedText = recognizedText.text;
+
+    // Navigate to result screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ResultScreen(text: extractedText),
+      ),
+    );
   }
 
   @override
   void initState() {
     super.initState();
+
+    // Automatically open camera
     pickImage();
   }
 
@@ -59,24 +71,10 @@ class _CameraScreenState extends State<CameraScreen> {
         title: const Text("Scan Homework"),
         backgroundColor: const Color(0xFF4F46E5),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            if (image != null) Image.file(image!),
-
-            const SizedBox(height: 20),
-
-            const Text(
-              "Detected Text:",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-
-            const SizedBox(height: 10),
-
-            Text(extractedText),
-          ],
-        ),
+      body: Center(
+        child: image == null
+            ? const Text("Opening camera...")
+            : Image.file(image!),
       ),
     );
   }
