@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
 import 'camera_screen.dart';
+import 'history_screen.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -12,7 +13,11 @@ class NavigationScreen extends StatefulWidget {
 class _NavigationScreenState extends State<NavigationScreen> {
   int currentIndex = 0;
 
-  final screens = [const HomeScreen(), const CameraScreen()];
+  final screens = [
+    const HomeScreen(),
+    const CameraScreen(),
+    const HistoryScreen(),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +37,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
 
           BottomNavigationBarItem(icon: Icon(Icons.camera_alt), label: "Scan"),
+
+          BottomNavigationBarItem(icon: Icon(Icons.history), label: "History"),
         ],
       ),
     );
