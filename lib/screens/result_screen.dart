@@ -16,12 +16,26 @@ class _ResultScreenState extends State<ResultScreen> {
   List<Message> messages = [];
   bool loading = false;
 
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
 
     // Add user message first
     messages.add(Message(text: widget.text, isUser: true));
+  }
+
+  void scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   Future solveHomework() async {
@@ -37,6 +51,28 @@ class _ResultScreenState extends State<ResultScreen> {
       messages.add(Message(text: result, isUser: false));
       loading = false;
     });
+
+    scrollToBottom(); // ⭐ auto scroll
+  }
+
+  // ⭐ Format AI response (highlight final answer)
+  TextSpan formatMessage(String text) {
+    if (text.contains("Final Answer")) {
+      final parts = text.split("Final Answer");
+
+      return TextSpan(
+        children: [
+          TextSpan(text: parts[0]),
+          const TextSpan(
+            text: "\nFinal Answer",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          TextSpan(text: parts[1]),
+        ],
+      );
+    }
+
+    return TextSpan(text: text);
   }
 
   @override
@@ -49,8 +85,10 @@ class _ResultScreenState extends State<ResultScreen> {
 
       body: Column(
         children: [
+          // 💬 CHAT MESSAGES
           Expanded(
             child: ListView.builder(
+              controller: _scrollController,
               padding: const EdgeInsets.all(16),
               itemCount: messages.length,
               itemBuilder: (context, index) {
@@ -69,24 +107,44 @@ class _ResultScreenState extends State<ResultScreen> {
                           : Colors.grey.shade200,
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: Text(
-                      msg.text,
-                      style: TextStyle(
-                        color: msg.isUser ? Colors.white : Colors.black,
-                      ),
-                    ),
+                    child: msg.isUser
+                        ? Text(
+                            msg.text,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                            ),
+                          )
+                        : RichText(
+                            text: TextSpan(
+                              style: const TextStyle(
+                                color: Colors.black,
+                                fontSize: 16,
+                                height: 1.5,
+                              ),
+                              children: [formatMessage(msg.text)],
+                            ),
+                          ),
                   ),
                 );
               },
             ),
           ),
 
+          // 🤖 AI TYPING INDICATOR
           if (loading)
             const Padding(
               padding: EdgeInsets.all(10),
-              child: CircularProgressIndicator(),
+              child: Text(
+                "AI is typing...",
+                style: TextStyle(
+                  fontStyle: FontStyle.italic,
+                  color: Colors.grey,
+                ),
+              ),
             ),
 
+          // 🔘 BUTTON
           Padding(
             padding: const EdgeInsets.all(16),
             child: ElevatedButton.icon(
@@ -98,6 +156,9 @@ class _ResultScreenState extends State<ResultScreen> {
                 padding: const EdgeInsets.symmetric(
                   horizontal: 30,
                   vertical: 16,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
                 ),
               ),
             ),

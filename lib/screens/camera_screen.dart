@@ -6,7 +6,9 @@ import 'dart:io';
 import 'result_screen.dart';
 
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key});
+  final ImageSource source;
+
+  const CameraScreen({super.key, required this.source});
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -15,13 +17,22 @@ class CameraScreen extends StatefulWidget {
 class _CameraScreenState extends State<CameraScreen> {
   File? image;
 
-  // Opens camera and captures image
-  Future pickImage() async {
-    final pickedFile = await ImagePicker().pickImage(
-      source: ImageSource.camera,
-    );
+  @override
+  void initState() {
+    super.initState();
 
-    if (pickedFile == null) return;
+    // 📷 OR 🖼 based on button pressed
+    pickImage(widget.source);
+  }
+
+  // Pick image from camera or gallery
+  Future pickImage(ImageSource source) async {
+    final pickedFile = await ImagePicker().pickImage(source: source);
+
+    if (pickedFile == null) {
+      Navigator.pop(context); // go back if cancelled
+      return;
+    }
 
     final imageFile = File(pickedFile.path);
 
@@ -29,11 +40,10 @@ class _CameraScreenState extends State<CameraScreen> {
       image = imageFile;
     });
 
-    // Process OCR
     processImage(imageFile);
   }
 
-  // OCR text recognition
+  // OCR processing
   Future processImage(File imageFile) async {
     final inputImage = InputImage.fromFile(imageFile);
 
@@ -48,7 +58,7 @@ class _CameraScreenState extends State<CameraScreen> {
     String extractedText = recognizedText.text;
 
     // Navigate to result screen
-    Navigator.push(
+    Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (context) => ResultScreen(text: extractedText),
@@ -57,23 +67,22 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 
   @override
-  void initState() {
-    super.initState();
-
-    // Automatically open camera
-    pickImage();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Scan Homework"),
+        title: const Text("Scanning..."),
         backgroundColor: const Color(0xFF4F46E5),
       ),
       body: Center(
         child: image == null
-            ? const Text("Opening camera...")
+            ? const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text("Processing image..."),
+                ],
+              )
             : Image.file(image!),
       ),
     );

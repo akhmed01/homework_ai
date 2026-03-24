@@ -31,7 +31,7 @@ class AIService {
               "parts": [
                 {
                   "text":
-                      "Solve this math problem step by step. Show each step clearly and give final answer:\n$cleaned",
+                      "Analyze this homework problem and respond appropriately.\n\nIf it is math → solve step by step.\nIf it is theory → explain clearly.\nIf it is an essay → write a structured answer.\n\nProblem:\n$cleaned",
                 },
               ],
             },
