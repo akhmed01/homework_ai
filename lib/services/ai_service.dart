@@ -18,7 +18,7 @@ class AIService {
     String cleaned = cleanProblem(problem);
 
     final url = Uri.parse(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=YOUR_API_KEY",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=AIzaSyB8hQ7QxYCVKfqR4crRPeEZRsZBE6zViTI",
     );
 
     try {
