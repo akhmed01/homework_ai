@@ -27,6 +27,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("History"),
@@ -34,21 +36,37 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ),
 
       body: history.isEmpty
-          ? const Center(child: Text("No history yet"))
+          ? Center(
+              child: Text("No history yet", style: theme.textTheme.bodyLarge),
+            )
           : ListView.builder(
+              padding: const EdgeInsets.all(12),
               itemCount: history.length,
               itemBuilder: (context, index) {
                 return Container(
-                  margin: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.symmetric(vertical: 8),
                   padding: const EdgeInsets.all(16),
+
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: const [
-                      BoxShadow(color: Colors.black12, blurRadius: 6),
+                    color: theme.cardColor, // ✅ adapts to dark/light
+                    borderRadius: BorderRadius.circular(16),
+
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 6,
+                        offset: const Offset(0, 3),
+                      ),
                     ],
                   ),
-                  child: Text(history[index]),
+
+                  child: Text(
+                    history[index],
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 16,
+                      height: 1.4,
+                    ),
+                  ),
                 );
               },
             ),
