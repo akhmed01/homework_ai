@@ -4,21 +4,26 @@ import 'package:flutter/material.dart';
 
 class ImageService {
   static Future<File?> cropImage(String path) async {
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: path,
-      compressQuality: 90,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Crop Homework',
-          toolbarColor: Colors.black,
-          toolbarWidgetColor: Colors.white,
-        ),
-        IOSUiSettings(title: 'Crop Homework'),
-      ],
-    );
+    try {
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: path,
+        compressQuality: 90,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Homework',
+            toolbarColor: Colors.black,
+            toolbarWidgetColor: Colors.white,
+          ),
+          IOSUiSettings(title: 'Crop Homework'),
+        ],
+      );
 
-    if (cropped == null) return null;
+      if (cropped == null) return null;
 
-    return File(cropped.path);
+      return File(cropped.path);
+    } catch (e) {
+      print("❌ Crop error: $e");
+      return null; // prevents crash
+    }
   }
 }

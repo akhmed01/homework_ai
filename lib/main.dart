@@ -7,8 +7,12 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 🔐 Load .env file BEFORE app starts
-  await dotenv.load(fileName: ".env");
+  try {
+    await dotenv.load(fileName: ".env");
+    print("✅ ENV LOADED");
+  } catch (e) {
+    print("❌ ENV FAILED: $e");
+  }
 
   runApp(
     ChangeNotifierProvider(
