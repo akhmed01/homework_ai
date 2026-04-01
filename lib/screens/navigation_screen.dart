@@ -12,26 +12,33 @@ class NavigationScreen extends StatefulWidget {
 class _NavigationScreenState extends State<NavigationScreen> {
   int currentIndex = 0;
 
-  final screens = [const HomeScreen(), const HistoryScreen()];
+  final List<Widget> screens = const [HomeScreen(), HistoryScreen()];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: screens[currentIndex],
+      body: SafeArea(
+        child: IndexedStack(index: currentIndex, children: screens),
+      ),
 
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: currentIndex,
-
-        onTap: (index) {
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: currentIndex,
+        onDestinationSelected: (index) {
           setState(() {
             currentIndex = index;
           });
         },
-
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: "History"),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: "Home",
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history),
+            label: "History",
+          ),
         ],
       ),
     );
