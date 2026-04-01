@@ -2,8 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/theme_service.dart';
 import 'screens/navigation_screen.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 🔐 Load .env file BEFORE app starts
+  await dotenv.load(fileName: ".env");
+
   runApp(
     ChangeNotifierProvider(
       create: (_) => ThemeService(),
@@ -20,27 +26,25 @@ class HomeworkAI extends StatelessWidget {
     final themeService = context.watch<ThemeService>();
 
     if (!themeService.isLoaded) {
-      return const SizedBox(); // or splash screen
+      return const MaterialApp(
+        home: Scaffold(body: Center(child: CircularProgressIndicator())),
+      );
     }
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: "Homework AI",
 
-      // 🔥 Modern UI
+      // 🔥 Light Theme
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.light,
-
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF4F46E5),
           brightness: Brightness.light,
         ),
-
         scaffoldBackgroundColor: const Color(0xFFF6F7FB),
-
         appBarTheme: const AppBarTheme(elevation: 0, centerTitle: true),
-
         cardTheme: CardThemeData(
           elevation: 2,
           shape: RoundedRectangleBorder(
@@ -49,19 +53,16 @@ class HomeworkAI extends StatelessWidget {
         ),
       ),
 
+      // 🌙 Dark Theme
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
-
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF4F46E5),
           brightness: Brightness.dark,
         ),
-
         scaffoldBackgroundColor: const Color(0xFF121212),
-
         appBarTheme: const AppBarTheme(elevation: 0, centerTitle: true),
-
         cardTheme: CardThemeData(
           elevation: 2,
           shape: RoundedRectangleBorder(

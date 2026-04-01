@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/message.dart';
 import '../services/ai_service.dart';
 import '../services/history_service.dart';
@@ -22,8 +23,11 @@ class _ResultScreenState extends State<ResultScreen> {
   void initState() {
     super.initState();
 
-    // Add user message first
+    // ✅ Add user message
     messages.add(Message(text: widget.text, isUser: true));
+
+    // 🔥 Auto solve on open
+    Future.microtask(() => solveHomework());
   }
 
   void scrollToBottom() {
@@ -39,11 +43,9 @@ class _ResultScreenState extends State<ResultScreen> {
   }
 
   Future solveHomework() async {
-    setState(() {
-      loading = true;
-    });
+    setState(() => loading = true);
 
-    final result = await AIService.solveProblem(widget.text);
+    final result = await AIService.solve(widget.text);
 
     await HistoryService.saveProblem(widget.text);
 
@@ -52,40 +54,41 @@ class _ResultScreenState extends State<ResultScreen> {
       loading = false;
     });
 
-    scrollToBottom(); // ⭐ auto scroll
+    scrollToBottom();
   }
 
-  // ⭐ Format AI response (highlight final answer)
-  TextSpan formatMessage(String text) {
-    if (text.contains("Final Answer")) {
-      final parts = text.split("Final Answer");
+  // ✅ Better formatting
+  TextSpan formatMessage(String text, ThemeData theme) {
+    final lines = text.split('\n');
 
-      return TextSpan(
-        children: [
-          TextSpan(text: parts[0]),
-          const TextSpan(
-            text: "\nFinal Answer",
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          TextSpan(text: parts[1]),
-        ],
-      );
-    }
-
-    return TextSpan(text: text);
+    return TextSpan(
+      style: TextStyle(
+        color: theme.colorScheme.onSurface,
+        fontSize: 16,
+        height: 1.5,
+      ),
+      children: lines.map((line) {
+        if (line.toLowerCase().contains("final answer")) {
+          return TextSpan(
+            text: "$line\n",
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          );
+        }
+        return TextSpan(text: "$line\n");
+      }).toList(),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("AI Chat"),
-        backgroundColor: const Color(0xFF4F46E5),
-      ),
+      appBar: AppBar(title: const Text("AI Solution")),
 
       body: Column(
         children: [
-          // 💬 CHAT MESSAGES
+          // 💬 CHAT
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
@@ -99,31 +102,49 @@ class _ResultScreenState extends State<ResultScreen> {
                       ? Alignment.centerRight
                       : Alignment.centerLeft,
                   child: Container(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.75,
+                    ),
                     margin: const EdgeInsets.symmetric(vertical: 6),
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       color: msg.isUser
-                          ? const Color(0xFF4F46E5)
-                          : Colors.grey.shade200,
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.surfaceVariant,
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: msg.isUser
                         ? Text(
                             msg.text,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: theme.colorScheme.onPrimary,
                               fontSize: 16,
                             ),
                           )
-                        : RichText(
-                            text: TextSpan(
-                              style: const TextStyle(
-                                color: Colors.black,
-                                fontSize: 16,
-                                height: 1.5,
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              RichText(text: formatMessage(msg.text, theme)),
+
+                              const SizedBox(height: 6),
+
+                              // 📋 Copy button
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: IconButton(
+                                  icon: const Icon(Icons.copy, size: 18),
+                                  onPressed: () {
+                                    Clipboard.setData(
+                                      ClipboardData(text: msg.text),
+                                    );
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text("Copied!")),
+                                    );
+                                  },
+                                ),
                               ),
-                              children: [formatMessage(msg.text)],
-                            ),
+                            ],
                           ),
                   ),
                 );
@@ -131,38 +152,19 @@ class _ResultScreenState extends State<ResultScreen> {
             ),
           ),
 
-          // 🤖 AI TYPING INDICATOR
+          // 🤖 LOADING
           if (loading)
             const Padding(
-              padding: EdgeInsets.all(10),
-              child: Text(
-                "AI is typing...",
-                style: TextStyle(
-                  fontStyle: FontStyle.italic,
-                  color: Colors.grey,
-                ),
+              padding: EdgeInsets.all(12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(strokeWidth: 2),
+                  SizedBox(width: 12),
+                  Text("Solving your homework..."),
+                ],
               ),
             ),
-
-          // 🔘 BUTTON
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: ElevatedButton.icon(
-              onPressed: solveHomework,
-              icon: const Icon(Icons.auto_awesome),
-              label: const Text("Solve with AI"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4F46E5),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 30,
-                  vertical: 16,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
