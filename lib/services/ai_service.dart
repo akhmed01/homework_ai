@@ -7,6 +7,7 @@ class AIService {
 
   static const String _url = 'https://api.groq.com/openai/v1/chat/completions';
 
+  // 🔹 Clean OCR text
   static String cleanProblem(String text) {
     return text
         .replaceAll('÷', '/')
@@ -16,12 +17,17 @@ class AIService {
         .replaceAll(RegExp(r'[^0-9a-zA-Z+\-*/().= ]'), '');
   }
 
+  // 🔹 Solve with AI
   static Future<String> solve(String input) async {
     if (_apiKey.isEmpty) {
-      throw Exception('Missing GROQ_API_KEY in .env');
+      throw Exception('❌ Missing GROQ_API_KEY in .env');
     }
 
     final cleaned = cleanProblem(input);
+
+    print("📤 TEXT SENT: $cleaned");
+    print("🔑 API KEY LENGTH: ${_apiKey.length}");
+    print("🚀 Sending request to AI...");
 
     try {
       final response = await http
@@ -37,7 +43,7 @@ class AIService {
                 {
                   "role": "system",
                   "content":
-                      "You are an expert math tutor. Explain step-by-step. Use simple language. Format answers cleanly.",
+                      "You are an expert math tutor. Solve step-by-step and keep answers clean and readable.",
                 },
                 {"role": "user", "content": cleaned},
               ],
@@ -46,23 +52,31 @@ class AIService {
           )
           .timeout(const Duration(seconds: 20));
 
-      final data = jsonDecode(response.body);
+      print("📡 STATUS CODE: ${response.statusCode}");
+      print("📦 RAW RESPONSE: ${response.body}");
 
       if (response.statusCode == 401) {
-        throw Exception('Invalid API key');
+        throw Exception('❌ Invalid API key');
       } else if (response.statusCode == 429) {
-        throw Exception('Too many requests. Try again later.');
+        throw Exception('❌ Too many requests (rate limit)');
       } else if (response.statusCode != 200) {
-        throw Exception('Server error: ${response.statusCode}');
+        throw Exception('❌ Server error: ${response.statusCode}');
       }
+
+      final data = jsonDecode(response.body);
 
       if (data['choices'] == null || data['choices'].isEmpty) {
-        throw Exception('Invalid AI response');
+        throw Exception('❌ Invalid AI response format');
       }
 
-      return data['choices'][0]['message']['content'] ?? 'No response';
+      final result = data['choices'][0]['message']['content'] ?? 'No response';
+
+      print("✅ AI RESULT: $result");
+
+      return result;
     } catch (e) {
-      throw Exception('Failed to connect to AI');
+      print("🔥 ERROR: $e");
+      throw Exception(e.toString());
     }
   }
 }
