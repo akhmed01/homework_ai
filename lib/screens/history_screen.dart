@@ -25,6 +25,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
   }
 
+  Future clearHistory() async {
+    await HistoryService.clearHistory();
+    setState(() {
+      history = [];
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -33,6 +40,33 @@ class _HistoryScreenState extends State<HistoryScreen> {
       appBar: AppBar(
         title: const Text("History"),
         backgroundColor: const Color(0xFF4F46E5),
+        actions: [
+          if (history.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: "Clear history",
+              onPressed: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text("Clear History"),
+                    content: const Text("Delete all saved problems?"),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text("Cancel"),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text("Clear"),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) clearHistory();
+              },
+            ),
+        ],
       ),
 
       body: history.isEmpty
@@ -48,7 +82,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   padding: const EdgeInsets.all(16),
 
                   decoration: BoxDecoration(
-                    color: theme.cardColor, // ✅ adapts to dark/light
+                    color: theme.cardColor,
                     borderRadius: BorderRadius.circular(16),
 
                     boxShadow: [

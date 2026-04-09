@@ -7,14 +7,9 @@ class AIService {
 
   static const String _url = 'https://api.groq.com/openai/v1/chat/completions';
 
-  // 🔹 Clean OCR text
+  // 🔹 Normalize math symbols only — preserve full problem text for AI
   static String cleanProblem(String text) {
-    return text
-        .replaceAll('÷', '/')
-        .replaceAll('×', '*')
-        .replaceAll('x', '*')
-        .replaceAll('X', '*')
-        .replaceAll(RegExp(r'[^0-9a-zA-Z+\-*/().= ]'), '');
+    return text.replaceAll('÷', '/').replaceAll('×', '*').trim();
   }
 
   // 🔹 Solve with AI
@@ -43,7 +38,7 @@ class AIService {
                 {
                   "role": "system",
                   "content":
-                      "You are an expert math tutor. Solve step-by-step and keep answers clean and readable.",
+                      "You are an expert tutor. Solve the problem step-by-step and keep answers clean and readable. Handle both pure math and word problems.",
                 },
                 {"role": "user", "content": cleaned},
               ],

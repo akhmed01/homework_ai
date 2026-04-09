@@ -45,16 +45,26 @@ class _ResultScreenState extends State<ResultScreen> {
   Future solveHomework() async {
     setState(() => loading = true);
 
-    final result = await AIService.solve(widget.text);
-
-    await HistoryService.saveProblem(widget.text);
-
-    setState(() {
-      messages.add(Message(text: result, isUser: false));
-      loading = false;
-    });
-
-    scrollToBottom();
+    try {
+      final result = await AIService.solve(widget.text);
+      await HistoryService.saveProblem(widget.text);
+      setState(() {
+        messages.add(Message(text: result, isUser: false));
+      });
+    } catch (e) {
+      setState(() {
+        messages.add(
+          Message(
+            text:
+                "⚠️ Failed to get a solution. Please check your connection and try again.",
+            isUser: false,
+          ),
+        );
+      });
+    } finally {
+      setState(() => loading = false);
+      scrollToBottom();
+    }
   }
 
   // ✅ Better formatting
@@ -110,7 +120,9 @@ class _ResultScreenState extends State<ResultScreen> {
                     decoration: BoxDecoration(
                       color: msg.isUser
                           ? theme.colorScheme.primary
-                          : theme.colorScheme.surfaceVariant,
+                          : theme
+                                .colorScheme
+                                .surfaceContainerHighest, // ✅ fixed deprecated surfaceVariant
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: msg.isUser
