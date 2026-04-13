@@ -17,20 +17,21 @@ class CameraScreen extends StatefulWidget {
 }
 
 class _CameraScreenState extends State<CameraScreen> {
-  File? image;
+  File? _image;
+  String _status = 'Preparing…';
 
   @override
   void initState() {
     super.initState();
-    pickImage(widget.source);
+    _pickAndProcess(widget.source);
   }
 
-  // 📷 Pick → ✂️ Crop → 🔍 OCR (SAFE VERSION)
-  Future pickImage(ImageSource source) async {
+  Future<void> _pickAndProcess(ImageSource source) async {
     try {
-      // 🔐 Request permissions
       await Permission.camera.request();
       await Permission.photos.request();
+
+      _setStatus('Opening camera…');
 
       final pickedFile = await ImagePicker().pickImage(source: source);
 
@@ -40,57 +41,49 @@ class _CameraScreenState extends State<CameraScreen> {
       }
 
       final originalFile = File(pickedFile.path);
+      _setStatus('Cropping image…');
 
-      // ✂️ Crop (safe)
       final croppedFile = await ImageService.cropImage(originalFile.path);
-
-      // 👉 If crop fails → fallback to original image
       final finalFile = croppedFile ?? originalFile;
 
-      setState(() {
-        image = finalFile;
-      });
+      setState(() => _image = finalFile);
 
-      await processImage(finalFile);
+      _setStatus('Reading text…');
+      await _runOCR(finalFile);
     } catch (e) {
-      debugPrint("❌ PICK IMAGE ERROR: $e");
-
+      debugPrint('❌ PICK IMAGE ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to process image")),
+          const SnackBar(content: Text('Failed to process image')),
         );
         Navigator.pop(context);
       }
     }
   }
 
-  // 🔍 OCR (SAFE VERSION)
-  Future processImage(File imageFile) async {
+  void _setStatus(String msg) {
+    if (mounted) setState(() => _status = msg);
+  }
+
+  Future<void> _runOCR(File imageFile) async {
     try {
       final inputImage = InputImage.fromFile(imageFile);
       final textRecognizer = TextRecognizer();
-
-      final recognizedText = await textRecognizer.processImage(inputImage);
-
-      textRecognizer.close();
-
-      final extractedText = recognizedText.text;
+      final recognized = await textRecognizer.processImage(inputImage);
+      await textRecognizer.close();
 
       if (!mounted) return;
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (context) => ResultScreen(text: extractedText),
-        ),
+        MaterialPageRoute(builder: (_) => ResultScreen(text: recognized.text)),
       );
     } catch (e) {
-      debugPrint("❌ OCR ERROR: $e");
-
+      debugPrint('❌ OCR ERROR: $e');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("OCR failed")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read text from image')),
+        );
         Navigator.pop(context);
       }
     }
@@ -98,29 +91,26 @@ class _CameraScreenState extends State<CameraScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Scanning..."),
-        backgroundColor: const Color(0xFF4F46E5),
-      ),
+      appBar: AppBar(title: const Text('Scanning…')),
       body: Center(
-        child: image == null
-            ? const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text("Processing image..."),
-                ],
-              )
-            : Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Image.file(image!),
-                  const SizedBox(height: 16),
-                  Text("Processing OCR..."),
-                ],
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_image != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.file(_image!, height: 280, fit: BoxFit.cover),
               ),
+              const SizedBox(height: 24),
+            ],
+            CircularProgressIndicator(color: theme.colorScheme.primary),
+            const SizedBox(height: 16),
+            Text(_status, style: theme.textTheme.bodyMedium),
+          ],
+        ),
       ),
     );
   }
