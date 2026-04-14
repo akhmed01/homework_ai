@@ -1,55 +1,59 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'dart:io';
+
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
+
+import '../models/message.dart';
 
 class AIService {
   static String get _apiKey => dotenv.env['GROQ_API_KEY'] ?? '';
 
   static const String _url = 'https://api.groq.com/openai/v1/chat/completions';
+
+  /// Text-only model — fast, for follow-up questions.
+  static const String _textModel = 'llama-3.1-8b-instant';
+
+  /// Vision model — used when any message carries an image.
+  static const String _visionModel =
+      'meta-llama/llama-4-scout-17b-16e-instruct';
+
   static const int _maxRetries = 2;
 
-  // 🔹 Minimal clean — preserve word problems, only normalize math symbols
-  static String cleanProblem(String text) {
-    return text.replaceAll('÷', '/').replaceAll('×', '*').trim();
-    // NOTE: We intentionally do NOT strip letters/punctuation here because
-    // word problems like "If a train travels at 60 km/h…" must survive intact.
-  }
+  // ── Minimal normalisation (preserves word problems) ──────────────────────
+  static String _clean(String text) =>
+      text.replaceAll('÷', '/').replaceAll('×', '*').trim();
 
-  // 🔹 Solve with AI — retries + structured prompt
-  static Future<String> solve(String input, {String mode = 'standard'}) async {
-    if (_apiKey.isEmpty) {
-      throw Exception('Missing GROQ_API_KEY in .env');
-    }
+  // ── System prompt per mode ───────────────────────────────────────────────
+  static String _systemPrompt(String mode) => switch (mode) {
+    'eli5' =>
+      'You are a friendly tutor explaining to a 12-year-old. '
+          'Use simple words and fun analogies. '
+          'Format:\n💡 Simple Explanation\n[explanation]\n\n✅ Answer\n[answer]',
+    'detailed' =>
+      'You are an expert tutor. Solve with full working. '
+          'Format:\n📚 Concept\n[theory]\n\n🔢 Step-by-step\nStep 1:…\n\n✅ Final Answer\n[answer]',
+    _ =>
+      'You are an expert homework tutor. '
+          'Solve problems clearly and answer follow-up questions in the same conversation. '
+          'When an image is provided, read and solve what is shown. '
+          'Format solutions as:\n🔢 Solution\nStep 1:…\n\n✅ Final Answer\n[answer]',
+  };
 
-    final cleaned = cleanProblem(input);
+  /// Send the full conversation history to the AI and get the next reply.
+  ///
+  /// [history] — all messages so far (user + assistant turns).
+  /// [mode]    — 'standard' | 'eli5' | 'detailed'
+  static Future<String> chat(
+    List<Message> history, {
+    String mode = 'standard',
+  }) async {
+    if (_apiKey.isEmpty) throw Exception('Missing GROQ_API_KEY in .env');
 
-    final systemPrompt = switch (mode) {
-      'eli5' =>
-        'You are a friendly tutor explaining to a 12-year-old. '
-            'Use simple words, short sentences, and a fun analogy. '
-            'Format your answer as:\n'
-            '💡 Simple Explanation\n'
-            '[plain-language explanation]\n\n'
-            '✅ Answer\n'
-            '[final answer]',
-      'detailed' =>
-        'You are an expert tutor. Solve the problem with full working. '
-            'Format your answer as:\n'
-            '📚 Concept\n'
-            '[brief theory]\n\n'
-            '🔢 Step-by-step Solution\n'
-            'Step 1: …\nStep 2: …\n\n'
-            '✅ Final Answer\n'
-            '[answer with units]',
-      _ =>
-        'You are an expert tutor. Solve the problem clearly. '
-            'Format your answer as:\n'
-            '🔢 Solution\n'
-            'Step 1: …\nStep 2: …\n\n'
-            '✅ Final Answer\n'
-            '[answer]',
-    };
+    final hasImage = history.any((m) => m.image != null);
+    final model = hasImage ? _visionModel : _textModel;
 
+    final apiMessages = await _buildApiMessages(history, mode);
     Exception? lastError;
 
     for (int attempt = 0; attempt <= _maxRetries; attempt++) {
@@ -62,28 +66,22 @@ class AIService {
                 'Content-Type': 'application/json',
               },
               body: jsonEncode({
-                "model": "llama-3.1-8b-instant",
-                "messages": [
-                  {"role": "system", "content": systemPrompt},
-                  {"role": "user", "content": cleaned},
-                ],
-                "temperature": 0.2,
+                'model': model,
+                'messages': apiMessages,
+                'temperature': 0.2,
               }),
             )
-            .timeout(const Duration(seconds: 25));
+            .timeout(const Duration(seconds: 40));
 
         if (response.statusCode == 401) {
           throw Exception('Invalid API key — check your .env file');
         } else if (response.statusCode == 429) {
-          throw Exception(
-            'Rate limit reached — please wait a moment and try again',
-          );
+          throw Exception('Rate limit reached — please wait a moment');
         } else if (response.statusCode != 200) {
-          throw Exception('Server error (${response.statusCode}) — try again');
+          throw Exception('Server error (${response.statusCode})');
         }
 
         final data = jsonDecode(response.body);
-
         if (data['choices'] == null || (data['choices'] as List).isEmpty) {
           throw Exception('Unexpected AI response format');
         }
@@ -100,4 +98,50 @@ class AIService {
 
     throw lastError!;
   }
+
+  // ── Build the Groq-compatible messages array ─────────────────────────────
+  static Future<List<Map<String, dynamic>>> _buildApiMessages(
+    List<Message> history,
+    String mode,
+  ) async {
+    final result = <Map<String, dynamic>>[
+      {'role': 'system', 'content': _systemPrompt(mode)},
+    ];
+
+    for (final msg in history) {
+      if (msg.isUser) {
+        if (msg.image != null) {
+          // Vision turn: content is a list with image_url + optional text
+          final b64 = await _toBase64(msg.image!);
+          result.add({
+            'role': 'user',
+            'content': [
+              {
+                'type': 'image_url',
+                'image_url': {'url': 'data:image/jpeg;base64,$b64'},
+              },
+              if (msg.text.isNotEmpty)
+                {'type': 'text', 'text': _clean(msg.text)},
+            ],
+          });
+        } else {
+          result.add({'role': 'user', 'content': _clean(msg.text)});
+        }
+      } else {
+        result.add({'role': 'assistant', 'content': msg.text});
+      }
+    }
+
+    return result;
+  }
+
+  static Future<String> _toBase64(File file) async {
+    final bytes = await file.readAsBytes();
+    return base64Encode(bytes);
+  }
+
+  /// Legacy compat — single-turn solve without history.
+  @Deprecated('Use chat() with a history list instead')
+  static Future<String> solve(String input, {String mode = 'standard'}) =>
+      chat([Message(text: input, isUser: true)], mode: mode);
 }

@@ -1,8 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_cropper/image_cropper.dart';
@@ -89,11 +88,12 @@ class ImageService {
             aspectRatioLockEnabled: false,
             hidesNavigationBar: false,
           ),
-          WebUiSettings(
-            context: _navigatorContext!,
-            presentStyle: WebPresentStyle.dialog,
-            size: const CropperSize(width: 520, height: 520),
-          ),
+          if (kIsWeb && _navigatorContext != null)
+            WebUiSettings(
+              context: _navigatorContext!,
+              presentStyle: WebPresentStyle.dialog,
+              size: const CropperSize(width: 520, height: 520),
+            ),
         ],
       );
 

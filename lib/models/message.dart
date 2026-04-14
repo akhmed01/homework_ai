@@ -1,6 +1,9 @@
+import 'dart:io';
+
 class Message {
   final String text;
   final bool isUser;
+  final File? image;
 
-  Message({required this.text, required this.isUser});
+  Message({required this.text, required this.isUser, this.image});
 }

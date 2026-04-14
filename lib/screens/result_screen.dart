@@ -1,49 +1,65 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+
 import '../models/message.dart';
 import '../services/ai_service.dart';
 import '../services/history_service.dart';
 
 class ResultScreen extends StatefulWidget {
+  /// OCR-extracted text from the scanned image.
   final String text;
 
-  const ResultScreen({super.key, required this.text});
+  /// The enhanced image file from the camera/gallery flow (optional).
+  final File? sourceImage;
+
+  const ResultScreen({super.key, required this.text, this.sourceImage});
 
   @override
   State<ResultScreen> createState() => _ResultScreenState();
 }
 
 class _ResultScreenState extends State<ResultScreen> {
-  List<Message> messages = [];
-  bool loading = false;
-  String _mode = 'standard'; // 'standard' | 'eli5' | 'detailed'
+  final List<Message> _messages = [];
+  bool _loading = false;
+  String _mode = 'standard';
 
-  // Editable OCR text so user can fix mistakes before solving
-  late final TextEditingController _editController;
-  bool _editingText = false;
+  final ScrollController _scroll = ScrollController();
+  final TextEditingController _input = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
 
-  final ScrollController _scrollController = ScrollController();
+  // Image the user has attached to the next message (not yet sent)
+  File? _pendingImage;
 
   @override
   void initState() {
     super.initState();
-    _editController = TextEditingController(text: widget.text);
-    messages.add(Message(text: widget.text, isUser: true));
-    Future.microtask(() => _solve(widget.text));
+
+    // First user message — the scanned problem, optionally with the source image
+    _messages.add(
+      Message(text: widget.text, isUser: true, image: widget.sourceImage),
+    );
+
+    Future.microtask(_autoSolve);
   }
 
   @override
   void dispose() {
-    _editController.dispose();
-    _scrollController.dispose();
+    _scroll.dispose();
+    _input.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
+  // ── Scroll ───────────────────────────────────────────────────────────────
+
   void _scrollToBottom() {
     Future.delayed(const Duration(milliseconds: 200), () {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+      if (_scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
@@ -51,27 +67,51 @@ class _ResultScreenState extends State<ResultScreen> {
     });
   }
 
-  Future<void> _solve(String text) async {
-    if (loading) return; // prevent double-tap spam
+  // ── Initial auto-solve ───────────────────────────────────────────────────
+
+  Future<void> _autoSolve() async {
+    await _sendToAI();
+    await HistoryService.saveProblem(widget.text);
+  }
+
+  // ── Send current input + pending image ──────────────────────────────────
+
+  Future<void> _sendMessage() async {
+    final text = _input.text.trim();
+    if (text.isEmpty && _pendingImage == null) return;
+    if (_loading) return;
+
+    final userMsg = Message(text: text, isUser: true, image: _pendingImage);
 
     setState(() {
-      loading = true;
-      _editingText = false;
+      _messages.add(userMsg);
+      _pendingImage = null;
+      _loading = false; // will be set true inside _sendToAI
     });
 
+    _input.clear();
+    _scrollToBottom();
+
+    await _sendToAI();
+  }
+
+  Future<void> _sendToAI() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+
     try {
-      final result = await AIService.solve(text, mode: _mode);
-      await HistoryService.saveProblem(text);
+      // Pass full history so the AI has conversation context
+      final reply = await AIService.chat(_messages, mode: _mode);
 
       if (!mounted) return;
       setState(() {
-        messages.add(Message(text: result, isUser: false));
-        loading = false;
+        _messages.add(Message(text: reply, isUser: false));
+        _loading = false;
       });
       _scrollToBottom();
     } catch (e) {
       if (!mounted) return;
-      setState(() => loading = false);
+      setState(() => _loading = false);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -80,7 +120,7 @@ class _ResultScreenState extends State<ResultScreen> {
           action: SnackBarAction(
             label: 'Retry',
             textColor: Colors.white,
-            onPressed: () => _solve(text),
+            onPressed: _sendToAI,
           ),
           duration: const Duration(seconds: 6),
         ),
@@ -88,10 +128,47 @@ class _ResultScreenState extends State<ResultScreen> {
     }
   }
 
-  // ✅ Rich text formatter — highlights emoji section headers & final answer
+  // ── Image picker for chat attachment ─────────────────────────────────────
+
+  Future<void> _pickImage(ImageSource source) async {
+    final picked = await ImagePicker().pickImage(source: source);
+    if (picked == null) return;
+    setState(() => _pendingImage = File(picked.path));
+  }
+
+  void _showImageSourceSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Take a photo'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Formatting ───────────────────────────────────────────────────────────
+
   TextSpan _formatMessage(String text, ThemeData theme) {
     final lines = text.split('\n');
-
     return TextSpan(
       style: TextStyle(
         color: theme.colorScheme.onSurface,
@@ -100,8 +177,6 @@ class _ResultScreenState extends State<ResultScreen> {
       ),
       children: lines.map((line) {
         final lower = line.toLowerCase();
-
-        // Bold + larger for final answer lines
         if (lower.contains('final answer') || lower.startsWith('✅')) {
           return TextSpan(
             text: '$line\n',
@@ -112,8 +187,6 @@ class _ResultScreenState extends State<ResultScreen> {
             ),
           );
         }
-
-        // Bold section headers (lines starting with emoji or ending with colon)
         if (RegExp(r'^[📚🔢💡📝🎯✏️🧠]').hasMatch(line) ||
             (line.endsWith(':') && line.length < 40)) {
           return TextSpan(
@@ -121,11 +194,12 @@ class _ResultScreenState extends State<ResultScreen> {
             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
           );
         }
-
         return TextSpan(text: '$line\n');
       }).toList(),
     );
   }
+
+  // ── Build ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -133,21 +207,13 @@ class _ResultScreenState extends State<ResultScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI Solution'),
+        title: const Text('AI Tutor'),
         actions: [
-          // Mode selector
           PopupMenuButton<String>(
             icon: const Icon(Icons.tune),
             tooltip: 'Solution style',
             initialValue: _mode,
-            onSelected: (val) {
-              setState(() {
-                _mode = val;
-                // Re-solve with new mode
-                messages.removeWhere((m) => !m.isUser);
-              });
-              _solve(_editController.text);
-            },
+            onSelected: (val) => setState(() => _mode = val),
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'standard', child: Text('⚡ Standard')),
               PopupMenuItem(value: 'eli5', child: Text('💡 Explain simply')),
@@ -159,123 +225,80 @@ class _ResultScreenState extends State<ResultScreen> {
 
       body: Column(
         children: [
-          // ✏️ Editable OCR preview banner
-          if (_editingText) _buildEditBanner(theme) else _buildEditHint(theme),
-
-          // 💬 Chat messages
+          // ── Messages ───────────────────────────────────────────────────
           Expanded(
             child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              itemCount: messages.length,
-              itemBuilder: (context, index) {
-                final msg = messages[index];
-                return _buildBubble(msg, theme);
-              },
+              controller: _scroll,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              itemCount: _messages.length,
+              itemBuilder: (_, i) => _ChatBubble(
+                message: _messages[i],
+                theme: theme,
+                formatMessage: _formatMessage,
+              ),
             ),
           ),
 
-          // 🤖 Typing indicator
-          if (loading) _buildTypingIndicator(theme),
-        ],
-      ),
-    );
-  }
+          // ── Typing indicator ──────────────────────────────────────────
+          if (_loading) _TypingIndicator(theme: theme),
 
-  Widget _buildEditHint(ThemeData theme) {
-    return GestureDetector(
-      onTap: () => setState(() => _editingText = true),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        color: theme.colorScheme.surfaceContainerHighest,
-        child: Row(
-          children: [
-            const Icon(Icons.edit_outlined, size: 14),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                _editController.text,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall,
-              ),
+          // ── Pending image preview ─────────────────────────────────────
+          if (_pendingImage != null)
+            _PendingImagePreview(
+              file: _pendingImage!,
+              onRemove: () => setState(() => _pendingImage = null),
             ),
-            Text(
-              'Tap to edit',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  Widget _buildEditBanner(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Column(
-        children: [
-          TextField(
-            controller: _editController,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              hintText: 'Edit OCR text if needed…',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () => setState(() => _editingText = false),
-                child: const Text('Cancel'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: () {
-                  final newText = _editController.text.trim();
-                  if (newText.isEmpty) return;
-                  setState(() {
-                    messages
-                      ..clear()
-                      ..add(Message(text: newText, isUser: true));
-                  });
-                  _solve(newText);
-                },
-                icon: const Icon(Icons.send, size: 16),
-                label: const Text('Re-solve'),
-              ),
-            ],
+          // ── Chat input bar ────────────────────────────────────────────
+          _ChatInputBar(
+            controller: _input,
+            focusNode: _focusNode,
+            loading: _loading,
+            onAttach: _showImageSourceSheet,
+            onSend: _sendMessage,
+            theme: theme,
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildBubble(Message msg, ThemeData theme) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Chat bubble
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ChatBubble extends StatelessWidget {
+  final Message message;
+  final ThemeData theme;
+  final TextSpan Function(String, ThemeData) formatMessage;
+
+  const _ChatBubble({
+    required this.message,
+    required this.theme,
+    required this.formatMessage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isUser = message.isUser;
+
     return Align(
-      alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.82,
         ),
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.all(14),
+        margin: const EdgeInsets.symmetric(vertical: 5),
         decoration: BoxDecoration(
-          color: msg.isUser
+          color: isUser
               ? theme.colorScheme.primary
               : theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(msg.isUser ? 16 : 4),
-            bottomRight: Radius.circular(msg.isUser ? 4 : 16),
+            topLeft: const Radius.circular(18),
+            topRight: const Radius.circular(18),
+            bottomLeft: Radius.circular(isUser ? 18 : 4),
+            bottomRight: Radius.circular(isUser ? 4 : 18),
           ),
           boxShadow: [
             BoxShadow(
@@ -285,48 +308,85 @@ class _ResultScreenState extends State<ResultScreen> {
             ),
           ],
         ),
-        child: msg.isUser
-            ? Text(
-                msg.text,
-                style: TextStyle(
-                  color: theme.colorScheme.onPrimary,
-                  fontSize: 15,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Attached image thumbnail
+            if (message.image != null)
+              ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(18),
+                  topRight: Radius.circular(18),
                 ),
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  RichText(text: _formatMessage(msg.text, theme)),
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: IconButton(
-                      icon: const Icon(Icons.copy_outlined, size: 16),
-                      tooltip: 'Copy answer',
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: msg.text));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Copied to clipboard'),
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+                child: Image.file(
+                  message.image!,
+                  width: double.infinity,
+                  height: 180,
+                  fit: BoxFit.cover,
+                ),
               ),
+
+            // Text content
+            if (message.text.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(13),
+                child: isUser
+                    ? Text(
+                        message.text,
+                        style: TextStyle(
+                          color: theme.colorScheme.onPrimary,
+                          fontSize: 15,
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          RichText(text: formatMessage(message.text, theme)),
+                          const SizedBox(height: 4),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: IconButton(
+                              icon: const Icon(Icons.copy_outlined, size: 16),
+                              tooltip: 'Copy',
+                              onPressed: () {
+                                Clipboard.setData(
+                                  ClipboardData(text: message.text),
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Copied'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+          ],
+        ),
       ),
     );
   }
+}
 
-  Widget _buildTypingIndicator(ThemeData theme) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Typing indicator
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TypingIndicator extends StatelessWidget {
+  final ThemeData theme;
+  const _TypingIndicator({required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
       child: Align(
         alignment: Alignment.centerLeft,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: theme.colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(16),
@@ -335,17 +395,155 @@ class _ResultScreenState extends State<ResultScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                width: 16,
-                height: 16,
+                width: 14,
+                height: 14,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   color: theme.colorScheme.primary,
                 ),
               ),
               const SizedBox(width: 10),
-              const Text('Solving…'),
+              const Text('Thinking…'),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pending image preview strip
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PendingImagePreview extends StatelessWidget {
+  final File file;
+  final VoidCallback onRemove;
+  const _PendingImagePreview({required this.file, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.file(file, width: 56, height: 56, fit: BoxFit.cover),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Image attached',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            onPressed: onRemove,
+            tooltip: 'Remove image',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chat input bar
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ChatInputBar extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool loading;
+  final VoidCallback onAttach;
+  final VoidCallback onSend;
+  final ThemeData theme;
+
+  const _ChatInputBar({
+    required this.controller,
+    required this.focusNode,
+    required this.loading,
+    required this.onAttach,
+    required this.onSend,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+        child: Row(
+          children: [
+            // 📎 Attach image
+            IconButton(
+              icon: Icon(
+                Icons.add_photo_alternate_outlined,
+                color: theme.colorScheme.primary,
+              ),
+              tooltip: 'Attach image',
+              onPressed: loading ? null : onAttach,
+            ),
+
+            // ✏️ Text field
+            Expanded(
+              child: TextField(
+                controller: controller,
+                focusNode: focusNode,
+                enabled: !loading,
+                maxLines: 4,
+                minLines: 1,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  hintText: 'Ask a follow-up question…',
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceContainerHighest,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                onSubmitted: (_) => onSend(),
+              ),
+            ),
+
+            const SizedBox(width: 8),
+
+            // ➤ Send button
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              decoration: BoxDecoration(
+                color: loading
+                    ? theme.colorScheme.surfaceContainerHighest
+                    : theme.colorScheme.primary,
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                icon: loading
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: theme.colorScheme.primary,
+                        ),
+                      )
+                    : Icon(
+                        Icons.send_rounded,
+                        color: theme.colorScheme.onPrimary,
+                      ),
+                onPressed: loading ? null : onSend,
+                tooltip: 'Send',
+              ),
+            ),
+          ],
         ),
       ),
     );

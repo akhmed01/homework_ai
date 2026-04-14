@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
+import 'chat_screen.dart';
 import 'history_screen.dart';
 
 class NavigationScreen extends StatefulWidget {
@@ -12,7 +13,11 @@ class NavigationScreen extends StatefulWidget {
 class _NavigationScreenState extends State<NavigationScreen> {
   int currentIndex = 0;
 
-  final List<Widget> screens = const [HomeScreen(), HistoryScreen()];
+  final List<Widget> screens = const [
+    HomeScreen(),
+    ChatScreen(),
+    HistoryScreen(),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -23,21 +28,22 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
       bottomNavigationBar: NavigationBar(
         selectedIndex: currentIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            currentIndex = index;
-          });
-        },
+        onDestinationSelected: (index) => setState(() => currentIndex = index),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home),
-            label: "Home",
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.chat_bubble_outline),
+            selectedIcon: Icon(Icons.chat_bubble),
+            label: 'Chat',
           ),
           NavigationDestination(
             icon: Icon(Icons.history_outlined),
             selectedIcon: Icon(Icons.history),
-            label: "History",
+            label: 'History',
           ),
         ],
       ),
