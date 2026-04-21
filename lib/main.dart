@@ -1,14 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'services/theme_service.dart';
-import 'screens/navigation_screen.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'firebase_options.dart';
+import 'services/theme_service.dart';
+import 'services/notification_service.dart';
+import 'screens/navigation_screen.dart';
+import 'screens/login_screen.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:timezone/timezone.dart' as tz;
+import 'package:timezone/data/latest_all.dart' as tz;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   await dotenv.load(fileName: ".env");
-  print("✅ ENV LOADED");
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  tz.initializeTimeZones();
+  final String timezoneName = await FlutterTimezone.getLocalTimezone();
+  tz.setLocalLocation(tz.getLocation(timezoneName));
+
+  await NotificationService.init();
 
   runApp(
     ChangeNotifierProvider(
@@ -34,8 +47,6 @@ class HomeworkAI extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: "Homework AI",
-
-      // 🔥 Light Theme
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.light,
@@ -52,8 +63,6 @@ class HomeworkAI extends StatelessWidget {
           ),
         ),
       ),
-
-      // 🌙 Dark Theme
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -70,10 +79,21 @@ class HomeworkAI extends StatelessWidget {
           ),
         ),
       ),
-
       themeMode: themeService.isDark ? ThemeMode.dark : ThemeMode.light,
 
-      home: const NavigationScreen(),
+      // 🔥 Auth gate — shows login or app based on Firebase auth state
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (snapshot.hasData) return const NavigationScreen();
+          return const LoginScreen();
+        },
+      ),
     );
   }
 }

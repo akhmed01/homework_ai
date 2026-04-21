@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "815425719795",
+    "project_id": "homework-ai-94113",
+    "storage_bucket": "homework-ai-94113.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:815425719795:android:2158968817cd1eeb655686",
+        "android_client_info": {
+          "package_name": "kz.alga.homework_ai"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "815425719795-0ffbf6gufm00qsucp4fn2b757e8qvkcb.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAkwueQqDBGQ2eaKPDZoP2BLKV4rNq6w0Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "815425719795-0ffbf6gufm00qsucp4fn2b757e8qvkcb.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

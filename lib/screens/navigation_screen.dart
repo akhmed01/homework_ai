@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
-import 'chat_screen.dart';
 import 'history_screen.dart';
+import 'homework_screen.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -13,10 +13,10 @@ class NavigationScreen extends StatefulWidget {
 class _NavigationScreenState extends State<NavigationScreen> {
   int currentIndex = 0;
 
-  final List<Widget> screens = [
-    const HomeScreen(),
-    const ChatScreen(),
-    const HistoryScreen(),
+  final List<Widget> screens = const [
+    HomeScreen(),
+    HomeworkScreen(),
+    HistoryScreen(),
   ];
 
   @override
@@ -25,7 +25,6 @@ class _NavigationScreenState extends State<NavigationScreen> {
       body: SafeArea(
         child: IndexedStack(index: currentIndex, children: screens),
       ),
-
       bottomNavigationBar: NavigationBar(
         selectedIndex: currentIndex,
         onDestinationSelected: (index) => setState(() => currentIndex = index),
@@ -33,17 +32,17 @@ class _NavigationScreenState extends State<NavigationScreen> {
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home),
-            label: 'Home',
+            label: "Home",
           ),
           NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble),
-            label: 'Chat',
+            icon: Icon(Icons.assignment_outlined),
+            selectedIcon: Icon(Icons.assignment),
+            label: "Homework",
           ),
           NavigationDestination(
             icon: Icon(Icons.history_outlined),
             selectedIcon: Icon(Icons.history),
-            label: 'History',
+            label: "History",
           ),
         ],
       ),
