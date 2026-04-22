@@ -39,7 +39,7 @@ class AIService {
   }) async {
     if (_apiKey.isEmpty) {
       throw Exception(
-        'Missing GROQ_API_KEY. Build with --dart-define=GROQ_API_KEY=your_key',
+        'Missing GROQ_API_KEY. Add it to .env or pass --dart-define=GROQ_API_KEY=your_key',
       );
     }
 

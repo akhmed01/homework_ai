@@ -3,7 +3,9 @@ import '../services/history_service.dart';
 import 'result_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
+  final bool isActive;
+
+  const HistoryScreen({super.key, this.isActive = false});
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
@@ -17,7 +19,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.isActive) {
+      _load();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant HistoryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      _load();
+    }
   }
 
   @override

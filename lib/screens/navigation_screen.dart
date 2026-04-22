@@ -13,14 +13,14 @@ class NavigationScreen extends StatefulWidget {
 class _NavigationScreenState extends State<NavigationScreen> {
   int currentIndex = 0;
 
-  final List<Widget> screens = [
-    const HomeScreen(),
-    const ChatScreen(),
-    const HistoryScreen(),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final screens = <Widget>[
+      const HomeScreen(),
+      const ChatScreen(),
+      HistoryScreen(isActive: currentIndex == 2),
+    ];
+
     return Scaffold(
       body: SafeArea(
         child: IndexedStack(index: currentIndex, children: screens),
