@@ -460,7 +460,7 @@ class _EmptyState extends StatelessWidget {
               'Type a question or attach a photo of your homework',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
             const SizedBox(height: 32),
@@ -522,7 +522,7 @@ class _Bubble extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),

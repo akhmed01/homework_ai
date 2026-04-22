@@ -58,7 +58,6 @@ class ImageService {
             toolbarWidgetColor: const Color(0xFF00E5FF),
             activeControlsWidgetColor: const Color(0xFF4F46E5),
             backgroundColor: const Color(0xFF0D0D0D),
-            statusBarColor: const Color(0xFF0D0D0D),
             cropFrameColor: const Color(0xFF00E5FF),
             cropGridColor: const Color(0xFF4F46E5),
             cropFrameStrokeWidth: 3,

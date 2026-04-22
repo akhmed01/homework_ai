@@ -20,7 +20,7 @@ class CameraScreen extends StatefulWidget {
 class _CameraScreenState extends State<CameraScreen>
     with SingleTickerProviderStateMixin {
   File? _preview;
-  String _status = 'Preparing…';
+  String _status = 'Preparing...';
   List<String> _steps = [];
 
   late final AnimationController _pulseController = AnimationController(
@@ -42,10 +42,26 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<void> _run() async {
     try {
-      await Permission.camera.request();
-      await Permission.photos.request();
+      if (widget.source == ImageSource.camera) {
+        final cameraStatus = await Permission.camera.request();
+        if (!cameraStatus.isGranted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Camera permission is required to scan homework'),
+              ),
+            );
+            Navigator.pop(context);
+          }
+          return;
+        }
+      }
 
-      _setStatus('Opening camera…');
+      _setStatus(
+        widget.source == ImageSource.camera
+            ? 'Opening camera...'
+            : 'Opening gallery...',
+      );
 
       final picked = await ImagePicker().pickImage(source: widget.source);
       if (picked == null) {
@@ -53,9 +69,8 @@ class _CameraScreenState extends State<CameraScreen>
         return;
       }
 
-      _setStatus('Crop & framing…');
+      _setStatus('Crop and framing...');
 
-      // ✨ New pipeline — crop UI + auto-enhance
       final result = await ImageService.cropAndEnhance(picked.path);
 
       if (result == null) {
@@ -68,10 +83,10 @@ class _CameraScreenState extends State<CameraScreen>
         _steps = result.appliedSteps;
       });
 
-      _setStatus('Reading text with OCR…');
+      _setStatus('Reading text with OCR...');
       await _runOCR(result.file);
     } catch (e) {
-      debugPrint('❌ Camera screen error: $e');
+      debugPrint('Camera screen error: $e');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -97,14 +112,15 @@ class _CameraScreenState extends State<CameraScreen>
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (_, a, __) => ResultScreen(text: result.text),
-          transitionsBuilder: (_, a, __, child) =>
+          pageBuilder: (_, a, _) =>
+              ResultScreen(text: result.text, sourceImage: file),
+          transitionsBuilder: (_, a, _, child) =>
               FadeTransition(opacity: a, child: child),
           transitionDuration: const Duration(milliseconds: 400),
         ),
       );
     } catch (e) {
-      debugPrint('❌ OCR error: $e');
+      debugPrint('OCR error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not read text from image')),
@@ -144,11 +160,10 @@ class _CameraScreenState extends State<CameraScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _EnhancedPreview extends StatelessWidget {
   final File file;
   final List<String> steps;
+
   const _EnhancedPreview({required this.file, required this.steps});
 
   @override
@@ -161,13 +176,13 @@ class _EnhancedPreview extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF00E5FF).withOpacity(0.35),
+                  color: const Color(0xFF00E5FF).withValues(alpha: 0.35),
                   blurRadius: 28,
                   spreadRadius: 2,
                 ),
               ],
               border: Border.all(
-                color: const Color(0xFF00E5FF).withOpacity(0.6),
+                color: const Color(0xFF00E5FF).withValues(alpha: 0.6),
                 width: 2,
               ),
             ),
@@ -192,6 +207,7 @@ class _EnhancedPreview extends StatelessWidget {
 
 class _StepChip extends StatelessWidget {
   final String label;
+
   const _StepChip({required this.label});
 
   @override
@@ -199,12 +215,14 @@ class _StepChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF4F46E5).withOpacity(0.25),
+        color: const Color(0xFF4F46E5).withValues(alpha: 0.25),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF4F46E5).withOpacity(0.5)),
+        border: Border.all(
+          color: const Color(0xFF4F46E5).withValues(alpha: 0.5),
+        ),
       ),
       child: Text(
-        '✓ $label',
+        'Done: $label',
         style: const TextStyle(
           color: Color(0xFF00E5FF),
           fontSize: 11,
@@ -224,10 +242,10 @@ class _ScannerPlaceholder extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: const Color(0xFF00E5FF).withOpacity(0.3),
+          color: const Color(0xFF00E5FF).withValues(alpha: 0.3),
           width: 2,
         ),
-        color: Colors.white.withOpacity(0.04),
+        color: Colors.white.withValues(alpha: 0.04),
       ),
       child: const Center(
         child: Column(
@@ -239,7 +257,10 @@ class _ScannerPlaceholder extends StatelessWidget {
               color: Color(0xFF00E5FF),
             ),
             SizedBox(height: 16),
-            Text('Waiting for image…', style: TextStyle(color: Colors.white54)),
+            Text(
+              'Waiting for image...',
+              style: TextStyle(color: Colors.white54),
+            ),
           ],
         ),
       ),
@@ -250,6 +271,7 @@ class _ScannerPlaceholder extends StatelessWidget {
 class _StatusBar extends StatelessWidget {
   final String status;
   final AnimationController pulseController;
+
   const _StatusBar({required this.status, required this.pulseController});
 
   @override
@@ -259,7 +281,7 @@ class _StatusBar extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.06),
+          color: Colors.white.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.white12),
         ),
@@ -267,7 +289,7 @@ class _StatusBar extends StatelessWidget {
           children: [
             AnimatedBuilder(
               animation: pulseController,
-              builder: (_, __) => Container(
+              builder: (_, _) => Container(
                 width: 10,
                 height: 10,
                 decoration: BoxDecoration(
@@ -281,7 +303,7 @@ class _StatusBar extends StatelessWidget {
                     BoxShadow(
                       color: const Color(
                         0xFF00E5FF,
-                      ).withOpacity(0.6 * pulseController.value),
+                      ).withValues(alpha: 0.6 * pulseController.value),
                       blurRadius: 8,
                       spreadRadius: 2,
                     ),

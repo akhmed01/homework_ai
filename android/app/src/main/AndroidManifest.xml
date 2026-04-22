@@ -2,20 +2,13 @@
     package="kz.alga.homework_ai">
 
     <uses-permission android:name="android.permission.CAMERA"/>
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32"/>
-    <!-- ✅ ADD THIS — required for Android 13+ gallery access -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-    <!-- ✅ ADD THIS — required for internet (Groq API calls) -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
-        android:label="homework_ai"
+        android:label="Homework AI"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="true">
+        android:icon="@mipmap/ic_launcher">
 
-        <!-- ✅ ADD THIS — ML Kit OCR model -->
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
             android:value="ocr"/>
