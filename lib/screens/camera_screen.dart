@@ -43,12 +43,27 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _run() async {
     try {
       if (widget.source == ImageSource.camera) {
-        final cameraStatus = await Permission.camera.request();
-        if (!cameraStatus.isGranted) {
+        try {
+          final cameraStatus = await Permission.camera.request();
+          if (!cameraStatus.isGranted) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Camera permission is required to scan homework',
+                  ),
+                ),
+              );
+              Navigator.pop(context);
+            }
+            return;
+          }
+        } catch (e) {
+          debugPrint('Permission request error: $e');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Camera permission is required to scan homework'),
+                content: Text('Error requesting camera permission'),
               ),
             );
             Navigator.pop(context);
@@ -123,7 +138,7 @@ class _CameraScreenState extends State<CameraScreen>
       debugPrint('OCR error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not read text from image')),
+          SnackBar(content: Text('Could not read text from image: $e')),
         );
         Navigator.pop(context);
       }

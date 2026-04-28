@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
-
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/navigation_screen.dart';
 import 'services/theme_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Load environment variables FIRST before any other initialization
   try {
     await dotenv.load(fileName: '.env');
   } catch (_) {
-    // Allow the app to run with --dart-define values even if .env is absent.
+    debugPrint('⚠️ .env file not found, using --dart-define values');
   }
 
   runApp(

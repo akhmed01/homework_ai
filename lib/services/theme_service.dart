@@ -15,8 +15,13 @@ class ThemeService extends ChangeNotifier {
   }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    _isDark = prefs.getBool(_key) ?? false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _isDark = prefs.getBool(_key) ?? false;
+    } catch (e) {
+      // If SharedPreferences fails, use default (light mode)
+      _isDark = false;
+    }
     _isLoaded = true;
     notifyListeners();
   }

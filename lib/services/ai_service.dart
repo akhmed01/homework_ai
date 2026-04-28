@@ -1,13 +1,21 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 import '../models/message.dart';
 
 class AIService {
-  static String get _apiKey => AppConfig.groqApiKey;
+  static String get _apiKey {
+    try {
+      return AppConfig.groqApiKey;
+    } catch (e) {
+      debugPrint('Error accessing API key: $e');
+      return '';
+    }
+  }
 
   static const String _url = 'https://api.groq.com/openai/v1/chat/completions';
   static const String _textModel = 'llama-3.1-8b-instant';
@@ -130,8 +138,4 @@ class AIService {
     final bytes = await file.readAsBytes();
     return base64Encode(bytes);
   }
-
-  @Deprecated('Use chat() with a history list instead')
-  static Future<String> solve(String input, {String mode = 'standard'}) =>
-      chat([Message(text: input, isUser: true)], mode: mode);
 }
