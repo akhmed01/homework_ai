@@ -50,7 +50,7 @@ class PrivacyScreen extends StatelessWidget {
           _SectionCard(
             title: 'What stays on the device',
             body:
-                'Your recent problem history is stored locally on the device so you can revisit past questions. Temporary image files may be stored in the app cache while a scan is being processed.',
+                'Your recent problem history and local profile details are stored on the device so you can revisit past questions and keep your preferences. Temporary image files may be stored in the app cache while a scan is being processed.',
           ),
           _SectionCard(
             title: 'How to delete data',
@@ -60,7 +60,7 @@ class PrivacyScreen extends StatelessWidget {
           _SectionCard(
             title: 'Ads, accounts, and payments',
             body:
-                'This build does not include ads, user accounts, or in-app purchases.',
+                'This build includes a local profile but does not yet include signed user accounts, cloud profile sync, ads, or in-app purchases.',
           ),
           const SizedBox(height: 12),
           _ValueCard(

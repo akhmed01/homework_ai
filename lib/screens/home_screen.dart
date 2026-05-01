@@ -5,14 +5,20 @@ import 'package:provider/provider.dart';
 import '../services/pdf_service.dart';
 import '../services/study_planner_service.dart';
 import '../services/theme_service.dart';
+import '../services/user_profile_service.dart';
 import 'camera_screen.dart';
 import 'privacy_screen.dart';
 import 'result_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final VoidCallback onOpenPlanner;
+  final VoidCallback onOpenProfile;
 
-  const HomeScreen({super.key, required this.onOpenPlanner});
+  const HomeScreen({
+    super.key,
+    required this.onOpenPlanner,
+    required this.onOpenProfile,
+  });
 
   void _openCapture(BuildContext context, ImageSource source) {
     Navigator.push(
@@ -62,12 +68,18 @@ class HomeScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final themeService = context.watch<ThemeService>();
     final planner = context.watch<StudyPlannerService>();
+    final profile = context.watch<UserProfileService>();
     final dueSoonTasks = planner.dueSoonTasks.take(2).toList();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Homework AI'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.account_circle_outlined),
+            tooltip: 'Profile',
+            onPressed: onOpenProfile,
+          ),
           IconButton(
             icon: const Icon(Icons.privacy_tip_outlined),
             tooltip: 'Privacy & Data',
@@ -175,6 +187,54 @@ class HomeScreen extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
+                      CircleAvatar(
+                        backgroundColor: theme.colorScheme.primary,
+                        foregroundColor: theme.colorScheme.onPrimary,
+                        child: Text(
+                          profile.initials,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: theme.colorScheme.onPrimary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              profile.displayName,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              profile.profileStatusSubtitle,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onPrimaryContainer
+                                    .withValues(alpha: 0.8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: onOpenProfile,
+                        child: const Text('Open'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                color: theme.colorScheme.primaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
                       Icon(
                         Icons.translate_outlined,
                         color: theme.colorScheme.onPrimaryContainer,
@@ -182,7 +242,7 @@ class HomeScreen extends StatelessWidget {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'AI answer language: ${planner.responseLanguageName}',
+                          'AI answer language: ${profile.responseLanguageName}',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onPrimaryContainer,
                             fontWeight: FontWeight.w600,
@@ -190,7 +250,7 @@ class HomeScreen extends StatelessWidget {
                         ),
                       ),
                       TextButton(
-                        onPressed: onOpenPlanner,
+                        onPressed: onOpenProfile,
                         child: const Text('Change'),
                       ),
                     ],

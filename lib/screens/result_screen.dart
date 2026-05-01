@@ -10,6 +10,7 @@ import '../services/ai_service.dart';
 import '../services/history_service.dart';
 import '../services/pdf_service.dart';
 import '../services/study_planner_service.dart';
+import '../services/user_profile_service.dart';
 
 class ResultScreen extends StatefulWidget {
   final String text;
@@ -77,13 +78,16 @@ class _ResultScreenState extends State<ResultScreen> {
     }
 
     final planner = context.read<StudyPlannerService>();
+    final profile = context.read<UserProfileService>();
     setState(() => _loading = true);
 
     try {
       final reply = await AIService.chat(
         _messages,
         mode: _mode,
-        responseLanguageCode: planner.responseLanguageCode,
+        responseLanguageCode: profile.responseLanguageCode,
+        studentName: profile.displayName,
+        studentGradeLevel: profile.gradeLevel,
       );
 
       if (!mounted) {
@@ -291,7 +295,7 @@ class _ResultScreenState extends State<ResultScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final planner = context.watch<StudyPlannerService>();
+    final profile = context.watch<UserProfileService>();
 
     return Scaffold(
       appBar: AppBar(
@@ -324,7 +328,7 @@ class _ResultScreenState extends State<ResultScreen> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             color: theme.colorScheme.surfaceContainerLowest,
             child: Text(
-              'Tutor language: ${planner.responseLanguageName}',
+              'Tutor language: ${profile.responseLanguageName}',
               style: theme.textTheme.labelLarge?.copyWith(
                 color: theme.colorScheme.primary,
                 fontWeight: FontWeight.w700,

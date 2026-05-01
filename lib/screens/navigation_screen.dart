@@ -4,6 +4,7 @@ import 'chat_screen.dart';
 import 'history_screen.dart';
 import 'home_screen.dart';
 import 'planner_screen.dart';
+import 'profile_screen.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -19,13 +20,18 @@ class _NavigationScreenState extends State<NavigationScreen> {
     setState(() => currentIndex = 3);
   }
 
+  void _openProfile() {
+    setState(() => currentIndex = 4);
+  }
+
   @override
   Widget build(BuildContext context) {
     final screens = <Widget>[
-      HomeScreen(onOpenPlanner: _openPlanner),
+      HomeScreen(onOpenPlanner: _openPlanner, onOpenProfile: _openProfile),
       const ChatScreen(),
       HistoryScreen(isActive: currentIndex == 2),
-      const PlannerScreen(),
+      PlannerScreen(onOpenProfile: _openProfile),
+      const ProfileScreen(),
     ];
 
     return Scaffold(
@@ -55,6 +61,11 @@ class _NavigationScreenState extends State<NavigationScreen> {
             icon: Icon(Icons.event_note_outlined),
             selectedIcon: Icon(Icons.event_note),
             label: 'Planner',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: 'Profile',
           ),
         ],
       ),

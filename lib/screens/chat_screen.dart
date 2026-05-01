@@ -9,6 +9,7 @@ import '../models/message.dart';
 import '../services/ai_service.dart';
 import '../services/pdf_service.dart';
 import '../services/study_planner_service.dart';
+import '../services/user_profile_service.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -42,6 +43,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     final planner = context.read<StudyPlannerService>();
+    final profile = context.read<UserProfileService>();
     final userMessage = Message(text: text, isUser: true, image: _pendingImage);
 
     setState(() {
@@ -57,7 +59,9 @@ class _ChatScreenState extends State<ChatScreen> {
       final reply = await AIService.chat(
         _messages,
         mode: _mode,
-        responseLanguageCode: planner.responseLanguageCode,
+        responseLanguageCode: profile.responseLanguageCode,
+        studentName: profile.displayName,
+        studentGradeLevel: profile.gradeLevel,
       );
 
       if (!mounted) {
@@ -105,6 +109,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     final planner = context.read<StudyPlannerService>();
+    final profile = context.read<UserProfileService>();
 
     setState(() => _loading = true);
 
@@ -112,7 +117,9 @@ class _ChatScreenState extends State<ChatScreen> {
       final reply = await AIService.chat(
         _messages,
         mode: _mode,
-        responseLanguageCode: planner.responseLanguageCode,
+        responseLanguageCode: profile.responseLanguageCode,
+        studentName: profile.displayName,
+        studentGradeLevel: profile.gradeLevel,
       );
 
       if (!mounted) {
@@ -338,7 +345,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final planner = context.watch<StudyPlannerService>();
+    final profile = context.watch<UserProfileService>();
 
     return Scaffold(
       appBar: AppBar(
@@ -400,7 +407,7 @@ class _ChatScreenState extends State<ChatScreen> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             color: theme.colorScheme.surfaceContainerLowest,
             child: Text(
-              'Tutor language: ${planner.responseLanguageName}',
+              'Tutor language: ${profile.responseLanguageName}',
               style: theme.textTheme.labelLarge?.copyWith(
                 color: theme.colorScheme.primary,
                 fontWeight: FontWeight.w700,

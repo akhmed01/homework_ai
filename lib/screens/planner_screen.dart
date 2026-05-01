@@ -3,9 +3,12 @@ import 'package:provider/provider.dart';
 
 import '../models/study_task.dart';
 import '../services/study_planner_service.dart';
+import '../services/user_profile_service.dart';
 
 class PlannerScreen extends StatelessWidget {
-  const PlannerScreen({super.key});
+  final VoidCallback onOpenProfile;
+
+  const PlannerScreen({super.key, required this.onOpenProfile});
 
   Future<void> _showAddTaskSheet(BuildContext context) async {
     await showModalBottomSheet<void>(
@@ -18,45 +21,11 @@ class PlannerScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _editStudentName(BuildContext context) async {
-    final service = context.read<StudyPlannerService>();
-    final controller = TextEditingController(text: service.studentName);
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Student profile'),
-        content: TextField(
-          controller: controller,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Display name',
-            hintText: 'Enter a name for this device',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              await service.updateStudentName(controller.text);
-              if (dialogContext.mounted) {
-                Navigator.pop(dialogContext);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final planner = context.watch<StudyPlannerService>();
+    final profile = context.watch<UserProfileService>();
 
     if (!planner.isLoaded) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -65,6 +34,12 @@ class PlannerScreen extends StatelessWidget {
     final dueSoonTasks = planner.dueSoonTasks;
     final tasks = planner.tasks;
     final weeklyBars = planner.lastSevenDays;
+    final dailyGoalProgress = profile.dailyGoalMinutes <= 0
+        ? 0.0
+        : (planner.studyMinutesToday / profile.dailyGoalMinutes).clamp(
+            0.0,
+            1.0,
+          );
 
     return Scaffold(
       appBar: AppBar(
@@ -106,7 +81,7 @@ class PlannerScreen extends StatelessWidget {
                       backgroundColor: theme.colorScheme.primary,
                       foregroundColor: theme.colorScheme.onPrimary,
                       child: Text(
-                        planner.studentName.substring(0, 1).toUpperCase(),
+                        profile.initials,
                         style: theme.textTheme.titleLarge?.copyWith(
                           color: theme.colorScheme.onPrimary,
                           fontWeight: FontWeight.w700,
@@ -119,14 +94,14 @@ class PlannerScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            planner.studentName,
+                            profile.displayName,
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Guest mode is active. Authentication and cloud sync still need a backend pass.',
+                            profile.profileStatusSubtitle,
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onPrimaryContainer
                                   .withValues(alpha: 0.8),
@@ -137,8 +112,8 @@ class PlannerScreen extends StatelessWidget {
                       ),
                     ),
                     TextButton(
-                      onPressed: () => _editStudentName(context),
-                      child: const Text('Edit'),
+                      onPressed: onOpenProfile,
+                      child: const Text('Profile'),
                     ),
                   ],
                 ),
@@ -154,7 +129,7 @@ class PlannerScreen extends StatelessWidget {
                   title: 'Today',
                   value: '${planner.studyMinutesToday} min',
                   subtitle:
-                      'Goal ${planner.dailyGoalMinutes} min • ${(planner.dailyGoalProgress * 100).round()}%',
+                      'Goal ${profile.dailyGoalMinutes} min • ${(dailyGoalProgress * 100).round()}%',
                   icon: Icons.timer_outlined,
                 ),
                 _MetricCard(
@@ -277,13 +252,13 @@ class PlannerScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     LinearProgressIndicator(
-                      value: planner.dailyGoalProgress,
+                      value: dailyGoalProgress,
                       minHeight: 10,
                       borderRadius: BorderRadius.circular(999),
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Today: ${planner.studyMinutesToday} of ${planner.dailyGoalMinutes} minutes',
+                      'Today: ${planner.studyMinutesToday} of ${profile.dailyGoalMinutes} minutes',
                       style: theme.textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 18),
@@ -313,7 +288,7 @@ class PlannerScreen extends StatelessWidget {
             const SizedBox(height: 24),
             _SectionHeader(
               title: 'Tutor Settings',
-              actionLabel: planner.responseLanguageName,
+              actionLabel: profile.responseLanguageName,
             ),
             const SizedBox(height: 10),
             Card(
@@ -330,8 +305,8 @@ class PlannerScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
-                      initialValue: planner.responseLanguageCode,
-                      items: StudyPlannerService.supportedLanguages.entries
+                      initialValue: profile.responseLanguageCode,
+                      items: UserProfileService.supportedLanguages.entries
                           .map(
                             (entry) => DropdownMenuItem<String>(
                               value: entry.key,
@@ -342,7 +317,7 @@ class PlannerScreen extends StatelessWidget {
                       onChanged: (value) {
                         if (value != null) {
                           context
-                              .read<StudyPlannerService>()
+                              .read<UserProfileService>()
                               .updateResponseLanguage(value);
                         }
                       },
@@ -727,14 +702,14 @@ class _GoalChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final planner = context.watch<StudyPlannerService>();
-    final selected = planner.dailyGoalMinutes == minutes;
+    final profile = context.watch<UserProfileService>();
+    final selected = profile.dailyGoalMinutes == minutes;
 
     return ChoiceChip(
       label: Text('$minutes min'),
       selected: selected,
       onSelected: (_) {
-        context.read<StudyPlannerService>().updateDailyGoalMinutes(minutes);
+        context.read<UserProfileService>().updateDailyGoalMinutes(minutes);
       },
     );
   }

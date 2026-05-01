@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'screens/navigation_screen.dart';
 import 'services/study_planner_service.dart';
 import 'services/theme_service.dart';
+import 'services/user_profile_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +21,7 @@ Future<void> main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeService()),
         ChangeNotifierProvider(create: (_) => StudyPlannerService()),
+        ChangeNotifierProvider(create: (_) => UserProfileService()),
       ],
       child: const HomeworkAI(),
     ),
@@ -32,8 +34,9 @@ class HomeworkAI extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeService = context.watch<ThemeService>();
+    final profileService = context.watch<UserProfileService>();
 
-    if (!themeService.isLoaded) {
+    if (!themeService.isLoaded || !profileService.isLoaded) {
       return const MaterialApp(
         home: Scaffold(body: Center(child: CircularProgressIndicator())),
       );

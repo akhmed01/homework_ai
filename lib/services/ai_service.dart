@@ -37,13 +37,20 @@ class AIService {
     }
   }
 
-  static String _systemPrompt(String mode, String responseLanguageCode) {
+  static String _systemPrompt(
+    String mode,
+    String responseLanguageCode, {
+    String? studentName,
+    String? studentGradeLevel,
+  }) {
     final language = _languageName(responseLanguageCode);
     final base =
         'You are Homework AI, a patient tutor who helps students learn instead of just copy. '
         'Always answer in $language unless the student explicitly asks for a different language. '
         'Keep equations accurate, point out the key idea, and be honest when information is missing. '
-        'If the student sends an image, read the homework from the image before solving it.';
+        'If the student sends an image, read the homework from the image before solving it. '
+        '${studentName != null && studentName.trim().isNotEmpty ? 'The student name is ${studentName.trim()}; use it only when it feels natural. ' : ''}'
+        '${studentGradeLevel != null && studentGradeLevel.trim().isNotEmpty ? 'Match the explanation depth to a ${studentGradeLevel.trim()} student. ' : ''}';
 
     switch (mode) {
       case 'simple':
@@ -104,6 +111,8 @@ class AIService {
     List<Message> history, {
     String mode = 'standard',
     String responseLanguageCode = 'en',
+    String? studentName,
+    String? studentGradeLevel,
   }) async {
     if (_apiKey.isEmpty) {
       throw Exception(
@@ -117,6 +126,8 @@ class AIService {
       history,
       mode,
       responseLanguageCode,
+      studentName: studentName,
+      studentGradeLevel: studentGradeLevel,
     );
 
     Exception? lastError;
@@ -169,10 +180,20 @@ class AIService {
   static Future<List<Map<String, dynamic>>> _buildApiMessages(
     List<Message> history,
     String mode,
-    String responseLanguageCode,
-  ) async {
+    String responseLanguageCode, {
+    String? studentName,
+    String? studentGradeLevel,
+  }) async {
     final result = <Map<String, dynamic>>[
-      {'role': 'system', 'content': _systemPrompt(mode, responseLanguageCode)},
+      {
+        'role': 'system',
+        'content': _systemPrompt(
+          mode,
+          responseLanguageCode,
+          studentName: studentName,
+          studentGradeLevel: studentGradeLevel,
+        ),
+      },
     ];
 
     for (final message in history) {
