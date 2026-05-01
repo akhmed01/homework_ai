@@ -1,22 +1,26 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:provider/provider.dart';
+
 import 'screens/navigation_screen.dart';
+import 'services/study_planner_service.dart';
 import 'services/theme_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load environment variables FIRST before any other initialization
   try {
     await dotenv.load(fileName: '.env');
   } catch (_) {
-    debugPrint('⚠️ .env file not found, using --dart-define values');
+    debugPrint('.env file not found, using --dart-define values');
   }
 
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => ThemeService(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeService()),
+        ChangeNotifierProvider(create: (_) => StudyPlannerService()),
+      ],
       child: const HomeworkAI(),
     ),
   );

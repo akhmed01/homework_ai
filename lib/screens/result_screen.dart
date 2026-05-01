@@ -3,16 +3,16 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 
 import '../models/message.dart';
 import '../services/ai_service.dart';
 import '../services/history_service.dart';
+import '../services/pdf_service.dart';
+import '../services/study_planner_service.dart';
 
 class ResultScreen extends StatefulWidget {
-  /// OCR-extracted text from the scanned image.
   final String text;
-
-  /// The enhanced image file from the camera/gallery flow (optional).
   final File? sourceImage;
 
   const ResultScreen({super.key, required this.text, this.sourceImage});
@@ -23,25 +23,20 @@ class ResultScreen extends StatefulWidget {
 
 class _ResultScreenState extends State<ResultScreen> {
   final List<Message> _messages = [];
-  bool _loading = false;
-  String _mode = 'standard';
-
   final ScrollController _scroll = ScrollController();
   final TextEditingController _input = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
-  // Image the user has attached to the next message (not yet sent)
+  bool _loading = false;
+  String _mode = 'standard';
   File? _pendingImage;
 
   @override
   void initState() {
     super.initState();
-
-    // First user message — the scanned problem, optionally with the source image
     _messages.add(
       Message(text: widget.text, isUser: true, image: widget.sourceImage),
     );
-
     Future.microtask(_autoSolve);
   }
 
@@ -53,66 +48,63 @@ class _ResultScreenState extends State<ResultScreen> {
     super.dispose();
   }
 
-  // ── Scroll ───────────────────────────────────────────────────────────────
-
-  void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 200), () {
-      if (_scroll.hasClients) {
-        _scroll.animateTo(
-          _scroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  // ── Initial auto-solve ───────────────────────────────────────────────────
-
   Future<void> _autoSolve() async {
     await _sendToAI();
     await HistoryService.saveProblem(widget.text);
   }
 
-  // ── Send current input + pending image ──────────────────────────────────
-
   Future<void> _sendMessage() async {
     final text = _input.text.trim();
-    if (text.isEmpty && _pendingImage == null) return;
-    if (_loading) return;
+    if ((text.isEmpty && _pendingImage == null) || _loading) {
+      return;
+    }
 
-    final userMsg = Message(text: text, isUser: true, image: _pendingImage);
+    final userMessage = Message(text: text, isUser: true, image: _pendingImage);
 
     setState(() {
-      _messages.add(userMsg);
+      _messages.add(userMessage);
       _pendingImage = null;
-      _loading = false; // will be set true inside _sendToAI
     });
 
     _input.clear();
     _scrollToBottom();
-
     await _sendToAI();
   }
 
   Future<void> _sendToAI() async {
-    if (_loading) return;
+    if (_loading) {
+      return;
+    }
+
+    final planner = context.read<StudyPlannerService>();
     setState(() => _loading = true);
 
     try {
-      // Pass full history so the AI has conversation context
-      final reply = await AIService.chat(_messages, mode: _mode);
+      final reply = await AIService.chat(
+        _messages,
+        mode: _mode,
+        responseLanguageCode: planner.responseLanguageCode,
+      );
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
+
       setState(() {
         _messages.add(Message(text: reply, isUser: false));
         _loading = false;
       });
+
+      await planner.recordAiSession(
+        summary: _studySummary(_messages.first.text, reply),
+      );
       _scrollToBottom();
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
+      if (!mounted) {
+        return;
+      }
 
+      setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.toString().replaceFirst('Exception: ', '')),
@@ -128,16 +120,58 @@ class _ResultScreenState extends State<ResultScreen> {
     }
   }
 
-  // ── Image picker for chat attachment ─────────────────────────────────────
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
 
   Future<void> _pickImage(ImageSource source) async {
     final picked = await ImagePicker().pickImage(source: source);
-    if (picked == null) return;
+    if (picked == null) {
+      return;
+    }
     setState(() => _pendingImage = File(picked.path));
   }
 
-  void _showImageSourceSheet() {
-    showModalBottomSheet(
+  Future<void> _importPdf() async {
+    try {
+      final result = await PdfService.pickPdfAndExtractText();
+      if (result == null || !mounted) {
+        return;
+      }
+
+      setState(() {
+        _input.text = result.extractedText;
+        _input.selection = TextSelection.fromPosition(
+          TextPosition(offset: _input.text.length),
+        );
+      });
+      _focusNode.requestFocus();
+
+      if (result.warning != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(result.warning!)));
+      }
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
+  void _showAttachSheet() {
+    showModalBottomSheet<void>(
       context: context,
       builder: (_) => SafeArea(
         child: Column(
@@ -159,16 +193,51 @@ class _ResultScreenState extends State<ResultScreen> {
                 _pickImage(ImageSource.gallery);
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf_outlined),
+              title: const Text('Import PDF'),
+              onTap: () {
+                Navigator.pop(context);
+                _importPdf();
+              },
+            ),
           ],
         ),
       ),
     );
   }
 
-  // ── Formatting ───────────────────────────────────────────────────────────
+  Future<void> _exportTranscript() async {
+    final transcript = _messages
+        .map(
+          (message) => '${message.isUser ? 'You' : 'Tutor'}: ${message.text}',
+        )
+        .join('\n\n');
 
-  TextSpan _formatMessage(String text, ThemeData theme) {
+    try {
+      final file = await PdfService.exportTextAsPdf(
+        title: 'solution-export',
+        text: transcript,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Saved PDF to ${file.path}')));
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not export PDF: $e')));
+    }
+  }
+
+  TextSpan _format(String text, ThemeData theme) {
     final lines = text.split('\n');
+
     return TextSpan(
       style: TextStyle(
         color: theme.colorScheme.onSurface,
@@ -176,34 +245,53 @@ class _ResultScreenState extends State<ResultScreen> {
         height: 1.6,
       ),
       children: lines.map((line) {
-        final lower = line.toLowerCase();
-        if (lower.contains('final answer') || lower.startsWith('✅')) {
+        final trimmed = line.trim();
+        final lower = trimmed.toLowerCase();
+
+        final isHeader =
+            lower == 'concept' ||
+            lower == 'solution' ||
+            lower == 'steps' ||
+            lower == 'worked solution' ||
+            lower == 'big idea' ||
+            lower == 'goal' ||
+            lower == 'how to think about it' ||
+            lower == 'check yourself' ||
+            lower == 'common mistake' ||
+            lower == 'final answer' ||
+            trimmed.endsWith(':');
+
+        if (isHeader) {
           return TextSpan(
             text: '$line\n',
             style: TextStyle(
               fontWeight: FontWeight.bold,
-              fontSize: 17,
-              color: theme.colorScheme.primary,
+              fontSize: lower == 'final answer' ? 17 : 15,
+              color: lower == 'final answer'
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurface,
             ),
           );
         }
-        if (RegExp(r'^[📚🔢💡📝🎯✏️🧠]').hasMatch(line) ||
-            (line.endsWith(':') && line.length < 40)) {
-          return TextSpan(
-            text: '$line\n',
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-          );
-        }
+
         return TextSpan(text: '$line\n');
       }).toList(),
     );
   }
 
-  // ── Build ────────────────────────────────────────────────────────────────
+  String _studySummary(String prompt, String reply) {
+    final source = prompt.trim().isNotEmpty ? prompt : reply;
+    final flattened = source.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (flattened.length <= 100) {
+      return flattened;
+    }
+    return '${flattened.substring(0, 100)}...';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final planner = context.watch<StudyPlannerService>();
 
     return Scaffold(
       appBar: AppBar(
@@ -213,48 +301,59 @@ class _ResultScreenState extends State<ResultScreen> {
             icon: const Icon(Icons.tune),
             tooltip: 'Solution style',
             initialValue: _mode,
-            onSelected: (val) => setState(() => _mode = val),
+            onSelected: (value) => setState(() => _mode = value),
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 'standard', child: Text('⚡ Standard')),
-              PopupMenuItem(value: 'eli5', child: Text('💡 Explain simply')),
-              PopupMenuItem(value: 'detailed', child: Text('📚 Detailed')),
+              PopupMenuItem(value: 'standard', child: Text('Standard')),
+              PopupMenuItem(value: 'simple', child: Text('Simple')),
+              PopupMenuItem(value: 'coach', child: Text('Coach')),
+              PopupMenuItem(value: 'detailed', child: Text('Detailed')),
             ],
           ),
+          if (_messages.any((message) => !message.isUser))
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              tooltip: 'Export answer as PDF',
+              onPressed: _exportTranscript,
+            ),
         ],
       ),
-
       body: Column(
         children: [
-          // ── Messages ───────────────────────────────────────────────────
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+            color: theme.colorScheme.surfaceContainerLowest,
+            child: Text(
+              'Tutor language: ${planner.responseLanguageName}',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
           Expanded(
             child: ListView.builder(
               controller: _scroll,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               itemCount: _messages.length,
-              itemBuilder: (_, i) => _ChatBubble(
-                message: _messages[i],
+              itemBuilder: (_, index) => _ChatBubble(
+                message: _messages[index],
                 theme: theme,
-                formatMessage: _formatMessage,
+                formatMessage: _format,
               ),
             ),
           ),
-
-          // ── Typing indicator ──────────────────────────────────────────
           if (_loading) _TypingIndicator(theme: theme),
-
-          // ── Pending image preview ─────────────────────────────────────
           if (_pendingImage != null)
             _PendingImagePreview(
               file: _pendingImage!,
               onRemove: () => setState(() => _pendingImage = null),
             ),
-
-          // ── Chat input bar ────────────────────────────────────────────
           _ChatInputBar(
             controller: _input,
             focusNode: _focusNode,
             loading: _loading,
-            onAttach: _showImageSourceSheet,
+            onAttach: _showAttachSheet,
             onSend: _sendMessage,
             theme: theme,
           ),
@@ -263,10 +362,6 @@ class _ResultScreenState extends State<ResultScreen> {
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Chat bubble
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _ChatBubble extends StatelessWidget {
   final Message message;
@@ -311,7 +406,6 @@ class _ChatBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Attached image thumbnail
             if (message.image != null)
               ClipRRect(
                 borderRadius: const BorderRadius.only(
@@ -325,8 +419,6 @@ class _ChatBubble extends StatelessWidget {
                   fit: BoxFit.cover,
                 ),
               ),
-
-            // Text content
             if (message.text.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.all(13),
@@ -371,12 +463,9 @@ class _ChatBubble extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Typing indicator
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _TypingIndicator extends StatelessWidget {
   final ThemeData theme;
+
   const _TypingIndicator({required this.theme});
 
   @override
@@ -403,7 +492,7 @@ class _TypingIndicator extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              const Text('Thinking…'),
+              const Text('Thinking...'),
             ],
           ),
         ),
@@ -412,13 +501,10 @@ class _TypingIndicator extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Pending image preview strip
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _PendingImagePreview extends StatelessWidget {
   final File file;
   final VoidCallback onRemove;
+
   const _PendingImagePreview({required this.file, required this.onRemove});
 
   @override
@@ -450,10 +536,6 @@ class _PendingImagePreview extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Chat input bar
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _ChatInputBar extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -478,27 +560,24 @@ class _ChatInputBar extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
         child: Row(
           children: [
-            // 📎 Attach image
             IconButton(
               icon: Icon(
                 Icons.add_photo_alternate_outlined,
                 color: theme.colorScheme.primary,
               ),
-              tooltip: 'Attach image',
+              tooltip: 'Attach',
               onPressed: loading ? null : onAttach,
             ),
-
-            // ✏️ Text field
             Expanded(
               child: TextField(
                 controller: controller,
                 focusNode: focusNode,
                 enabled: !loading,
-                maxLines: 4,
                 minLines: 1,
+                maxLines: 4,
                 textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
-                  hintText: 'Ask a follow-up question…',
+                  hintText: 'Ask a follow-up question...',
                   filled: true,
                   fillColor: theme.colorScheme.surfaceContainerHighest,
                   contentPadding: const EdgeInsets.symmetric(
@@ -513,10 +592,7 @@ class _ChatInputBar extends StatelessWidget {
                 onSubmitted: (_) => onSend(),
               ),
             ),
-
             const SizedBox(width: 8),
-
-            // ➤ Send button
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               decoration: BoxDecoration(

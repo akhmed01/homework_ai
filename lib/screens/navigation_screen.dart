@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'home_screen.dart';
+
 import 'chat_screen.dart';
 import 'history_screen.dart';
+import 'home_screen.dart';
+import 'planner_screen.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -13,19 +15,23 @@ class NavigationScreen extends StatefulWidget {
 class _NavigationScreenState extends State<NavigationScreen> {
   int currentIndex = 0;
 
+  void _openPlanner() {
+    setState(() => currentIndex = 3);
+  }
+
   @override
   Widget build(BuildContext context) {
     final screens = <Widget>[
-      const HomeScreen(),
+      HomeScreen(onOpenPlanner: _openPlanner),
       const ChatScreen(),
       HistoryScreen(isActive: currentIndex == 2),
+      const PlannerScreen(),
     ];
 
     return Scaffold(
       body: SafeArea(
         child: IndexedStack(index: currentIndex, children: screens),
       ),
-
       bottomNavigationBar: NavigationBar(
         selectedIndex: currentIndex,
         onDestinationSelected: (index) => setState(() => currentIndex = index),
@@ -44,6 +50,11 @@ class _NavigationScreenState extends State<NavigationScreen> {
             icon: Icon(Icons.history_outlined),
             selectedIcon: Icon(Icons.history),
             label: 'History',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.event_note_outlined),
+            selectedIcon: Icon(Icons.event_note),
+            label: 'Planner',
           ),
         ],
       ),

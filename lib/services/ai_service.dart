@@ -8,6 +8,12 @@ import '../config/app_config.dart';
 import '../models/message.dart';
 
 class AIService {
+  static const String _url = 'https://api.groq.com/openai/v1/chat/completions';
+  static const String _textModel = 'llama-3.1-8b-instant';
+  static const String _visionModel =
+      'meta-llama/llama-4-scout-17b-16e-instruct';
+  static const int _maxRetries = 2;
+
   static String get _apiKey {
     try {
       return AppConfig.groqApiKey;
@@ -17,33 +23,87 @@ class AIService {
     }
   }
 
-  static const String _url = 'https://api.groq.com/openai/v1/chat/completions';
-  static const String _textModel = 'llama-3.1-8b-instant';
-  static const String _visionModel =
-      'meta-llama/llama-4-scout-17b-16e-instruct';
-  static const int _maxRetries = 2;
-
   static String _clean(String text) =>
       text.replaceAll('\u00F7', '/').replaceAll('\u00D7', '*').trim();
 
-  static String _systemPrompt(String mode) => switch (mode) {
-    'eli5' =>
-      'You are a friendly tutor explaining to a 12-year-old. '
-          'Use simple words and fun analogies. '
-          'Format:\nSimple Explanation\n[explanation]\n\nFinal Answer\n[answer]',
-    'detailed' =>
-      'You are an expert tutor. Solve with full working. '
-          'Format:\nConcept\n[theory]\n\nStep-by-step\nStep 1: ...\n\nFinal Answer\n[answer]',
-    _ =>
-      'You are an expert homework tutor. '
-          'Solve problems clearly and answer follow-up questions in the same conversation. '
-          'When an image is provided, read and solve what is shown. '
-          'Format solutions as:\nSolution\nStep 1: ...\n\nFinal Answer\n[answer]',
-  };
+  static String _languageName(String code) {
+    switch (code) {
+      case 'mn':
+        return 'Mongolian';
+      case 'es':
+        return 'Spanish';
+      default:
+        return 'English';
+    }
+  }
+
+  static String _systemPrompt(String mode, String responseLanguageCode) {
+    final language = _languageName(responseLanguageCode);
+    final base =
+        'You are Homework AI, a patient tutor who helps students learn instead of just copy. '
+        'Always answer in $language unless the student explicitly asks for a different language. '
+        'Keep equations accurate, point out the key idea, and be honest when information is missing. '
+        'If the student sends an image, read the homework from the image before solving it.';
+
+    switch (mode) {
+      case 'simple':
+      case 'eli5':
+        return '$base '
+            'Use simple words, short sentences, and one idea at a time. '
+            'Format with these sections exactly:\n'
+            'Big Idea\n'
+            '[one short explanation]\n\n'
+            'Steps\n'
+            '1. ...\n'
+            '2. ...\n\n'
+            'Final Answer\n'
+            '[answer]';
+      case 'coach':
+        return '$base '
+            'Teach like a coach. Emphasize the method, the likely mistake, and how to check the result. '
+            'Format with these sections exactly:\n'
+            'Goal\n'
+            '[what we need to find]\n\n'
+            'How To Think About It\n'
+            '[strategy]\n\n'
+            'Steps\n'
+            '1. ...\n'
+            '2. ...\n\n'
+            'Check Yourself\n'
+            '[quick self-check]\n\n'
+            'Final Answer\n'
+            '[answer]';
+      case 'detailed':
+        return '$base '
+            'Give a thorough, step-by-step explanation with reasoning. '
+            'Format with these sections exactly:\n'
+            'Concept\n'
+            '[core theory]\n\n'
+            'Worked Solution\n'
+            'Step 1: ...\n'
+            'Step 2: ...\n\n'
+            'Common Mistake\n'
+            '[pitfall]\n\n'
+            'Final Answer\n'
+            '[answer]';
+      default:
+        return '$base '
+            'Keep the answer clear, structured, and useful for studying. '
+            'Format with these sections exactly:\n'
+            'Concept\n'
+            '[short explanation]\n\n'
+            'Solution\n'
+            'Step 1: ...\n'
+            'Step 2: ...\n\n'
+            'Final Answer\n'
+            '[answer]';
+    }
+  }
 
   static Future<String> chat(
     List<Message> history, {
     String mode = 'standard',
+    String responseLanguageCode = 'en',
   }) async {
     if (_apiKey.isEmpty) {
       throw Exception(
@@ -51,10 +111,14 @@ class AIService {
       );
     }
 
-    final hasImage = history.any((m) => m.image != null);
+    final hasImage = history.any((message) => message.image != null);
     final model = hasImage ? _visionModel : _textModel;
+    final apiMessages = await _buildApiMessages(
+      history,
+      mode,
+      responseLanguageCode,
+    );
 
-    final apiMessages = await _buildApiMessages(history, mode);
     Exception? lastError;
 
     for (int attempt = 0; attempt <= _maxRetries; attempt++) {
@@ -76,9 +140,11 @@ class AIService {
 
         if (response.statusCode == 401) {
           throw Exception('Invalid API key. Check your GROQ_API_KEY value.');
-        } else if (response.statusCode == 429) {
+        }
+        if (response.statusCode == 429) {
           throw Exception('Rate limit reached. Please wait a moment.');
-        } else if (response.statusCode != 200) {
+        }
+        if (response.statusCode != 200) {
           throw Exception('Server error (${response.statusCode}).');
         }
 
@@ -103,31 +169,32 @@ class AIService {
   static Future<List<Map<String, dynamic>>> _buildApiMessages(
     List<Message> history,
     String mode,
+    String responseLanguageCode,
   ) async {
     final result = <Map<String, dynamic>>[
-      {'role': 'system', 'content': _systemPrompt(mode)},
+      {'role': 'system', 'content': _systemPrompt(mode, responseLanguageCode)},
     ];
 
-    for (final msg in history) {
-      if (msg.isUser) {
-        if (msg.image != null) {
-          final b64 = await _toBase64(msg.image!);
+    for (final message in history) {
+      if (message.isUser) {
+        if (message.image != null) {
+          final base64Image = await _toBase64(message.image!);
           result.add({
             'role': 'user',
             'content': [
               {
                 'type': 'image_url',
-                'image_url': {'url': 'data:image/jpeg;base64,$b64'},
+                'image_url': {'url': 'data:image/jpeg;base64,$base64Image'},
               },
-              if (msg.text.isNotEmpty)
-                {'type': 'text', 'text': _clean(msg.text)},
+              if (message.text.isNotEmpty)
+                {'type': 'text', 'text': _clean(message.text)},
             ],
           });
         } else {
-          result.add({'role': 'user', 'content': _clean(msg.text)});
+          result.add({'role': 'user', 'content': _clean(message.text)});
         }
       } else {
-        result.add({'role': 'assistant', 'content': msg.text});
+        result.add({'role': 'assistant', 'content': message.text});
       }
     }
 

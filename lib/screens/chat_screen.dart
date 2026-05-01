@@ -3,9 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 
 import '../models/message.dart';
 import '../services/ai_service.dart';
+import '../services/pdf_service.dart';
+import '../services/study_planner_service.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -16,13 +19,12 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final List<Message> _messages = [];
-  bool _loading = false;
-  String _mode = 'standard';
-
   final ScrollController _scroll = ScrollController();
   final TextEditingController _input = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
+  bool _loading = false;
+  String _mode = 'standard';
   File? _pendingImage;
 
   @override
@@ -33,34 +35,17 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  // ── Scroll ───────────────────────────────────────────────────────────────
-
-  void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 200), () {
-      if (_scroll.hasClients) {
-        _scroll.animateTo(
-          _scroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  // ── Send ─────────────────────────────────────────────────────────────────
-
   Future<void> _send() async {
     final text = _input.text.trim();
-    if ((text.isEmpty && _pendingImage == null) || _loading) return;
+    if ((text.isEmpty && _pendingImage == null) || _loading) {
+      return;
+    }
 
-    final userMsg = Message(
-      text: text,
-      isUser: true,
-      image: _pendingImage,
-    );
+    final planner = context.read<StudyPlannerService>();
+    final userMessage = Message(text: text, isUser: true, image: _pendingImage);
 
     setState(() {
-      _messages.add(userMsg);
+      _messages.add(userMessage);
       _pendingImage = null;
       _loading = true;
     });
@@ -69,15 +54,28 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     try {
-      final reply = await AIService.chat(_messages, mode: _mode);
-      if (!mounted) return;
+      final reply = await AIService.chat(
+        _messages,
+        mode: _mode,
+        responseLanguageCode: planner.responseLanguageCode,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
       setState(() {
         _messages.add(Message(text: reply, isUser: false));
         _loading = false;
       });
+
+      await planner.recordAiSession(summary: _studySummary(text, reply));
       _scrollToBottom();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
+
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -95,7 +93,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _retryLast() {
-    // Remove last failed assistant turn if any, then re-send
     if (_messages.isNotEmpty && !_messages.last.isUser) {
       setState(() => _messages.removeLast());
     }
@@ -103,19 +100,37 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _sendToAI() async {
-    if (_loading || _messages.isEmpty) return;
+    if (_loading || _messages.isEmpty) {
+      return;
+    }
+
+    final planner = context.read<StudyPlannerService>();
+
     setState(() => _loading = true);
 
     try {
-      final reply = await AIService.chat(_messages, mode: _mode);
-      if (!mounted) return;
+      final reply = await AIService.chat(
+        _messages,
+        mode: _mode,
+        responseLanguageCode: planner.responseLanguageCode,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
       setState(() {
         _messages.add(Message(text: reply, isUser: false));
         _loading = false;
       });
+
+      await planner.recordAiSession(summary: _studySummary('', reply));
       _scrollToBottom();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
+
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -127,10 +142,20 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // ── Image picker ─────────────────────────────────────────────────────────
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
 
   void _showAttachSheet() {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -155,7 +180,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: Icon(Icons.camera_alt_outlined),
                 ),
                 title: const Text('Take a photo'),
-                subtitle: const Text('Use camera to capture homework'),
+                subtitle: const Text('Use the camera to capture homework'),
                 onTap: () {
                   Navigator.pop(context);
                   _pickImage(ImageSource.camera);
@@ -172,6 +197,17 @@ class _ChatScreenState extends State<ChatScreen> {
                   _pickImage(ImageSource.gallery);
                 },
               ),
+              ListTile(
+                leading: const CircleAvatar(
+                  child: Icon(Icons.picture_as_pdf_outlined),
+                ),
+                title: const Text('Import PDF'),
+                subtitle: const Text('Paste text from a text-based PDF'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _importPdf();
+                },
+              ),
               const SizedBox(height: 8),
             ],
           ),
@@ -182,74 +218,162 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _pickImage(ImageSource source) async {
     final picked = await ImagePicker().pickImage(source: source);
-    if (picked == null) return;
+    if (picked == null) {
+      return;
+    }
     setState(() => _pendingImage = File(picked.path));
   }
 
-  // ── Formatting ───────────────────────────────────────────────────────────
+  Future<void> _importPdf() async {
+    try {
+      final result = await PdfService.pickPdfAndExtractText();
+      if (result == null || !mounted) {
+        return;
+      }
+
+      setState(() {
+        _input.text = result.extractedText;
+        _input.selection = TextSelection.fromPosition(
+          TextPosition(offset: _input.text.length),
+        );
+      });
+      _focusNode.requestFocus();
+
+      if (result.warning != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(result.warning!)));
+      }
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
+  Future<void> _exportChat() async {
+    final transcript = _messages
+        .map(
+          (message) => '${message.isUser ? 'You' : 'Tutor'}: ${message.text}',
+        )
+        .join('\n\n');
+
+    try {
+      final file = await PdfService.exportTextAsPdf(
+        title: 'chat-export',
+        text: transcript,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Saved PDF to ${file.path}')));
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not export chat: $e')));
+    }
+  }
 
   TextSpan _format(String text, ThemeData theme) {
     final lines = text.split('\n');
+
     return TextSpan(
       style: TextStyle(
-          color: theme.colorScheme.onSurface, fontSize: 15, height: 1.6),
+        color: theme.colorScheme.onSurface,
+        fontSize: 15,
+        height: 1.6,
+      ),
       children: lines.map((line) {
-        final lower = line.toLowerCase();
-        if (lower.contains('final answer') || lower.startsWith('✅')) {
+        final trimmed = line.trim();
+        final lower = trimmed.toLowerCase();
+
+        final isHeader =
+            lower == 'concept' ||
+            lower == 'solution' ||
+            lower == 'steps' ||
+            lower == 'worked solution' ||
+            lower == 'big idea' ||
+            lower == 'goal' ||
+            lower == 'how to think about it' ||
+            lower == 'check yourself' ||
+            lower == 'common mistake' ||
+            lower == 'final answer' ||
+            trimmed.endsWith(':');
+
+        if (isHeader) {
           return TextSpan(
             text: '$line\n',
             style: TextStyle(
               fontWeight: FontWeight.bold,
-              fontSize: 17,
-              color: theme.colorScheme.primary,
+              fontSize: lower == 'final answer' ? 17 : 15,
+              color: lower == 'final answer'
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurface,
             ),
           );
         }
-        if (RegExp(r'^[📚🔢💡📝🎯✏️🧠]').hasMatch(line) ||
-            (line.endsWith(':') && line.length < 40)) {
-          return TextSpan(
-            text: '$line\n',
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-          );
-        }
+
         return TextSpan(text: '$line\n');
       }).toList(),
     );
   }
 
-  // ── Build ────────────────────────────────────────────────────────────────
+  String _studySummary(String prompt, String reply) {
+    final source = prompt.trim().isNotEmpty ? prompt : reply;
+    final flattened = source.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (flattened.length <= 100) {
+      return flattened;
+    }
+    return '${flattened.substring(0, 100)}...';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final planner = context.watch<StudyPlannerService>();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('AI Chat'),
         actions: [
-          // Mode selector
           PopupMenuButton<String>(
             icon: const Icon(Icons.tune),
             tooltip: 'Response style',
             initialValue: _mode,
-            onSelected: (val) => setState(() => _mode = val),
+            onSelected: (value) => setState(() => _mode = value),
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 'standard', child: Text('⚡ Standard')),
-              PopupMenuItem(value: 'eli5', child: Text('💡 Explain simply')),
-              PopupMenuItem(value: 'detailed', child: Text('📚 Detailed')),
+              PopupMenuItem(value: 'standard', child: Text('Standard')),
+              PopupMenuItem(value: 'simple', child: Text('Simple')),
+              PopupMenuItem(value: 'coach', child: Text('Coach')),
+              PopupMenuItem(value: 'detailed', child: Text('Detailed')),
             ],
           ),
-          // Clear conversation
+          if (_messages.any((message) => !message.isUser))
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              tooltip: 'Export chat as PDF',
+              onPressed: _exportChat,
+            ),
           if (_messages.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.delete_sweep_outlined),
               tooltip: 'Clear chat',
               onPressed: () {
-                showDialog(
+                showDialog<void>(
                   context: context,
                   builder: (_) => AlertDialog(
                     title: const Text('Clear chat?'),
-                    content: const Text('This will delete the whole conversation.'),
+                    content: const Text(
+                      'This will delete the whole conversation.',
+                    ),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context),
@@ -269,10 +393,20 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
         ],
       ),
-
       body: Column(
         children: [
-          // ── Messages or empty state ────────────────────────────────────
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+            color: theme.colorScheme.surfaceContainerLowest,
+            child: Text(
+              'Tutor language: ${planner.responseLanguageName}',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
           Expanded(
             child: _messages.isEmpty
                 ? _EmptyState(
@@ -284,14 +418,17 @@ class _ChatScreenState extends State<ChatScreen> {
                 : ListView.builder(
                     controller: _scroll,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                     itemCount: _messages.length,
-                    itemBuilder: (_, i) =>
-                        _Bubble(msg: _messages[i], theme: theme, format: _format),
+                    itemBuilder: (_, index) => _Bubble(
+                      message: _messages[index],
+                      theme: theme,
+                      format: _format,
+                    ),
                   ),
           ),
-
-          // ── Typing indicator ──────────────────────────────────────────
           if (_loading)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
@@ -299,7 +436,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 alignment: Alignment.centerLeft,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 12),
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(16),
@@ -316,50 +455,53 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      const Text('Thinking…'),
+                      const Text('Thinking...'),
                     ],
                   ),
                 ),
               ),
             ),
-
-          // ── Pending image strip ───────────────────────────────────────
           if (_pendingImage != null)
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               color: theme.colorScheme.surfaceContainerHighest,
               child: Row(
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(10),
-                    child: Image.file(_pendingImage!,
-                        width: 56, height: 56, fit: BoxFit.cover),
+                    child: Image.file(
+                      _pendingImage!,
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text('Image attached',
-                        style: theme.textTheme.bodySmall),
+                    child: Text(
+                      'Image attached',
+                      style: theme.textTheme.bodySmall,
+                    ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, size: 18),
+                    tooltip: 'Remove image',
                     onPressed: () => setState(() => _pendingImage = null),
-                    tooltip: 'Remove',
                   ),
                 ],
               ),
             ),
-
-          // ── Input bar ────────────────────────────────────────────────
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
               child: Row(
                 children: [
                   IconButton(
-                    icon: Icon(Icons.add_photo_alternate_outlined,
-                        color: theme.colorScheme.primary),
-                    tooltip: 'Attach image',
+                    icon: Icon(
+                      Icons.add_photo_alternate_outlined,
+                      color: theme.colorScheme.primary,
+                    ),
+                    tooltip: 'Attach',
                     onPressed: _loading ? null : _showAttachSheet,
                   ),
                   Expanded(
@@ -367,16 +509,17 @@ class _ChatScreenState extends State<ChatScreen> {
                       controller: _input,
                       focusNode: _focusNode,
                       enabled: !_loading,
-                      maxLines: 4,
                       minLines: 1,
+                      maxLines: 4,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
-                        hintText: 'Ask anything…',
+                        hintText: 'Ask anything...',
                         filled: true,
-                        fillColor:
-                            theme.colorScheme.surfaceContainerHighest,
+                        fillColor: theme.colorScheme.surfaceContainerHighest,
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
                           borderSide: BorderSide.none,
@@ -404,9 +547,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                 color: theme.colorScheme.primary,
                               ),
                             )
-                          : Icon(Icons.send_rounded,
-                              color: theme.colorScheme.onPrimary),
+                          : Icon(
+                              Icons.send_rounded,
+                              color: theme.colorScheme.onPrimary,
+                            ),
                       onPressed: _loading ? null : _send,
+                      tooltip: 'Send',
                     ),
                   ),
                 ],
@@ -419,22 +565,18 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Empty state with suggestion chips
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _EmptyState extends StatelessWidget {
   final ValueChanged<String> onSuggestionTap;
 
   const _EmptyState({required this.onSuggestionTap});
 
   static const _suggestions = [
-    '📐 Solve: 2x + 5 = 13',
-    '🧪 Explain photosynthesis',
-    '📜 Summarise WW2 causes',
-    '🔢 What is the Pythagorean theorem?',
-    '💡 How does gravity work?',
-    '📊 Difference between mean and median',
+    'Solve: 2x + 5 = 13',
+    'Explain photosynthesis',
+    'Summarize the causes of World War II',
+    'What is the Pythagorean theorem?',
+    'How does gravity work?',
+    'Difference between mean and median',
   ];
 
   @override
@@ -447,17 +589,21 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.auto_awesome,
-                size: 56, color: theme.colorScheme.primary),
+            Icon(
+              Icons.auto_awesome,
+              size: 56,
+              color: theme.colorScheme.primary,
+            ),
             const SizedBox(height: 16),
             Text(
               'Ask me anything',
-              style: theme.textTheme.headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Type a question or attach a photo of your homework',
+              'Type a question, upload an image, or import a PDF to get study help.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
@@ -468,15 +614,14 @@ class _EmptyState extends StatelessWidget {
               spacing: 10,
               runSpacing: 10,
               alignment: WrapAlignment.center,
-              children: _suggestions.map((s) {
-                return ActionChip(
-                  label: Text(s),
-                  onPressed: () => onSuggestionTap(
-                    // strip the emoji prefix before putting in input
-                    s.substring(s.indexOf(' ') + 1),
-                  ),
-                );
-              }).toList(),
+              children: _suggestions
+                  .map(
+                    (suggestion) => ActionChip(
+                      label: Text(suggestion),
+                      onPressed: () => onSuggestionTap(suggestion),
+                    ),
+                  )
+                  .toList(),
             ),
           ],
         ),
@@ -485,30 +630,27 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Chat bubble
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _Bubble extends StatelessWidget {
-  final Message msg;
+  final Message message;
   final ThemeData theme;
   final TextSpan Function(String, ThemeData) format;
 
   const _Bubble({
-    required this.msg,
+    required this.message,
     required this.theme,
     required this.format,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isUser = msg.isUser;
+    final isUser = message.isUser;
 
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.82),
+          maxWidth: MediaQuery.of(context).size.width * 0.82,
+        ),
         margin: const EdgeInsets.symmetric(vertical: 5),
         decoration: BoxDecoration(
           color: isUser
@@ -531,36 +673,34 @@ class _Bubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image thumbnail
-            if (msg.image != null)
+            if (message.image != null)
               ClipRRect(
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(18),
                   topRight: Radius.circular(18),
                 ),
                 child: Image.file(
-                  msg.image!,
+                  message.image!,
                   width: double.infinity,
                   height: 180,
                   fit: BoxFit.cover,
                 ),
               ),
-
-            // Text
-            if (msg.text.isNotEmpty)
+            if (message.text.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.all(13),
                 child: isUser
                     ? Text(
-                        msg.text,
+                        message.text,
                         style: TextStyle(
-                            color: theme.colorScheme.onPrimary,
-                            fontSize: 15),
+                          color: theme.colorScheme.onPrimary,
+                          fontSize: 15,
+                        ),
                       )
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          RichText(text: format(msg.text, theme)),
+                          RichText(text: format(message.text, theme)),
                           const SizedBox(height: 4),
                           Align(
                             alignment: Alignment.centerRight,
@@ -569,7 +709,8 @@ class _Bubble extends StatelessWidget {
                               tooltip: 'Copy',
                               onPressed: () {
                                 Clipboard.setData(
-                                    ClipboardData(text: msg.text));
+                                  ClipboardData(text: message.text),
+                                );
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text('Copied'),
