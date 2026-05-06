@@ -11,6 +11,7 @@ import '../services/history_service.dart';
 import '../services/pdf_service.dart';
 import '../services/study_planner_service.dart';
 import '../services/user_profile_service.dart';
+import '../widgets/ai_feedback_widgets.dart';
 
 class ResultScreen extends StatefulWidget {
   final String text;
@@ -29,7 +30,7 @@ class _ResultScreenState extends State<ResultScreen> {
   final FocusNode _focusNode = FocusNode();
 
   bool _loading = false;
-  String _mode = 'standard';
+  String _mode = 'extended';
   File? _pendingImage;
 
   @override
@@ -132,6 +133,14 @@ class _ResultScreenState extends State<ResultScreen> {
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
+      }
+    });
+  }
+
+  void _snapToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
     });
   }
@@ -255,11 +264,13 @@ class _ResultScreenState extends State<ResultScreen> {
         final isHeader =
             lower == 'concept' ||
             lower == 'solution' ||
+            lower == 'step-by-step' ||
             lower == 'steps' ||
             lower == 'worked solution' ||
             lower == 'big idea' ||
             lower == 'goal' ||
             lower == 'how to think about it' ||
+            lower == 'why it works' ||
             lower == 'check yourself' ||
             lower == 'common mistake' ||
             lower == 'final answer' ||
@@ -307,6 +318,7 @@ class _ResultScreenState extends State<ResultScreen> {
             initialValue: _mode,
             onSelected: (value) => setState(() => _mode = value),
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'extended', child: Text('Extended')),
               PopupMenuItem(value: 'standard', child: Text('Standard')),
               PopupMenuItem(value: 'simple', child: Text('Simple')),
               PopupMenuItem(value: 'coach', child: Text('Coach')),
@@ -341,13 +353,15 @@ class _ResultScreenState extends State<ResultScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               itemCount: _messages.length,
               itemBuilder: (_, index) => _ChatBubble(
+                key: ValueKey(_messages[index].id),
                 message: _messages[index],
                 theme: theme,
                 formatMessage: _format,
+                onProgress: _snapToBottom,
               ),
             ),
           ),
-          if (_loading) _TypingIndicator(theme: theme),
+          if (_loading) AiThinkingIndicator(theme: theme),
           if (_pendingImage != null)
             _PendingImagePreview(
               file: _pendingImage!,
@@ -371,11 +385,14 @@ class _ChatBubble extends StatelessWidget {
   final Message message;
   final ThemeData theme;
   final TextSpan Function(String, ThemeData) formatMessage;
+  final VoidCallback? onProgress;
 
   const _ChatBubble({
+    super.key,
     required this.message,
     required this.theme,
     required this.formatMessage,
+    this.onProgress,
   });
 
   @override
@@ -437,7 +454,13 @@ class _ChatBubble extends StatelessWidget {
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          RichText(text: formatMessage(message.text, theme)),
+                          AnimatedAiText(
+                            key: ValueKey(message.id),
+                            text: message.text,
+                            theme: theme,
+                            format: formatMessage,
+                            onProgress: onProgress,
+                          ),
                           const SizedBox(height: 4),
                           Align(
                             alignment: Alignment.centerRight,
@@ -461,44 +484,6 @@ class _ChatBubble extends StatelessWidget {
                       ),
               ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TypingIndicator extends StatelessWidget {
-  final ThemeData theme;
-
-  const _TypingIndicator({required this.theme});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Text('Thinking...'),
-            ],
-          ),
         ),
       ),
     );

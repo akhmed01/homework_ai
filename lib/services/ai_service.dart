@@ -53,6 +53,20 @@ class AIService {
         '${studentGradeLevel != null && studentGradeLevel.trim().isNotEmpty ? 'Match the explanation depth to a ${studentGradeLevel.trim()} student. ' : ''}';
 
     switch (mode) {
+      case 'extended':
+        return '$base '
+            'Give a slightly more expanded answer than the standard mode so the student can follow the method clearly without making the reply too long. '
+            'Format with these sections exactly:\n'
+            'Concept\n'
+            '[2 to 4 sentences explaining the idea]\n\n'
+            'Step-by-step\n'
+            '1. ...\n'
+            '2. ...\n'
+            '3. ...\n\n'
+            'Why It Works\n'
+            '[brief reasoning or shortcut]\n\n'
+            'Final Answer\n'
+            '[answer]';
       case 'simple':
       case 'eli5':
         return '$base '
@@ -109,7 +123,7 @@ class AIService {
 
   static Future<String> chat(
     List<Message> history, {
-    String mode = 'standard',
+    String mode = 'extended',
     String responseLanguageCode = 'en',
     String? studentName,
     String? studentGradeLevel,
