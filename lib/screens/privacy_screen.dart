@@ -40,12 +40,12 @@ class PrivacyScreen extends StatelessWidget {
             body:
                 'Camera access is used only when you choose to scan homework. '
                 'Gallery access is used only when you select an image to upload. '
-                'OCR is performed on-device before the app asks the AI service for an answer.',
+                'If you choose OCR mode, text recognition is performed on-device before the app asks the AI service for an answer.',
           ),
           _SectionCard(
             title: 'What is sent off the device',
             body:
-                'When you ask for an answer or continue a chat, the text you entered and any image you attached are sent over HTTPS to the configured AI provider so it can generate a response.',
+                'When you ask for an answer or continue a chat, the text you entered and any image you attached are sent over HTTPS to the configured AI provider so it can generate a response. If you use image mode, the cropped homework image is sent directly instead of first running OCR.',
           ),
           _SectionCard(
             title: 'What stays on the device',

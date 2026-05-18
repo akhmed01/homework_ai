@@ -7,53 +7,50 @@ import 'package:image/image.dart' as img;
 import 'package:image_cropper/image_cropper.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// Result returned after the full processing pipeline completes.
 class ProcessedImage {
   final File file;
-
-  /// Human-readable list of enhancements that were applied.
   final List<String> appliedSteps;
 
   ProcessedImage({required this.file, required this.appliedSteps});
 }
 
 class ImageService {
-  // ─────────────────────────────────────────────────────────────────────────
-  // PUBLIC API
-  // ─────────────────────────────────────────────────────────────────────────
+  static const int _visionMaxDimension = 2400;
+  static const int _ocrMaxWidth = 2000;
 
-  /// Full pipeline:
-  ///   1. Show interactive crop UI
-  ///   2. Auto-enhance for OCR (contrast, sharpen, denoise, binarize)
-  ///   3. Return [ProcessedImage] with the final file + applied steps log.
-  ///
-  /// Returns `null` if the user cancelled crop.
-  static Future<ProcessedImage?> cropAndEnhance(String sourcePath) async {
-    // ── Step 1 · Interactive crop ─────────────────────────────────────────
+  static Future<File?> cropForHomework(String sourcePath) async {
     final cropped = await _showCropUI(sourcePath);
-    if (cropped == null) return null;
-
-    // ── Step 2 · AI-style enhancement pipeline ───────────────────────────
-    return _enhance(cropped);
+    if (cropped == null) {
+      return null;
+    }
+    return _normalizeForVision(cropped);
   }
 
-  /// Lightweight version — just the enhancement pipeline, no crop UI.
-  static Future<ProcessedImage> enhanceOnly(File source) async {
+  static Future<ProcessedImage?> cropAndEnhance(String sourcePath) async {
+    final cropped = await cropForHomework(sourcePath);
+    if (cropped == null) {
+      return null;
+    }
+    return enhanceForOcr(cropped);
+  }
+
+  static Future<ProcessedImage> enhanceForOcr(File source) async {
     return _enhance(source);
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // CROP UI
-  // ─────────────────────────────────────────────────────────────────────────
+  @Deprecated('Use enhanceForOcr() instead.')
+  static Future<ProcessedImage> enhanceOnly(File source) async {
+    return enhanceForOcr(source);
+  }
 
   static Future<File?> _showCropUI(String path) async {
     try {
       final cropped = await ImageCropper().cropImage(
         sourcePath: path,
-        compressQuality: 100, // keep full quality — we compress later ourselves
+        compressQuality: 100,
         uiSettings: [
           AndroidUiSettings(
-            toolbarTitle: '✂️ Crop Homework',
+            toolbarTitle: 'Crop Homework',
             toolbarColor: const Color(0xFF0D0D0D),
             toolbarWidgetColor: const Color(0xFF00E5FF),
             activeControlsWidgetColor: const Color(0xFF4F46E5),
@@ -78,7 +75,7 @@ class ImageService {
           ),
           IOSUiSettings(
             title: 'Crop Homework',
-            doneButtonTitle: 'Enhance ✨',
+            doneButtonTitle: 'Use Crop',
             cancelButtonTitle: 'Cancel',
             resetButtonHidden: false,
             rotateButtonsHidden: false,
@@ -96,17 +93,45 @@ class ImageService {
         ],
       );
 
-      if (cropped == null) return null;
+      if (cropped == null) {
+        return null;
+      }
+
       return File(cropped.path);
     } catch (e) {
-      debugPrint('❌ Crop UI error: $e');
+      debugPrint('Crop UI error: $e');
       return null;
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // ENHANCEMENT PIPELINE
-  // ─────────────────────────────────────────────────────────────────────────
+  static Future<File> _normalizeForVision(File source) async {
+    try {
+      final bytes = await source.readAsBytes();
+      img.Image? image = img.decodeImage(bytes);
+
+      if (image == null) {
+        return source;
+      }
+
+      image = img.bakeOrientation(image);
+
+      final longestSide = math.max(image.width, image.height);
+      if (longestSide > _visionMaxDimension) {
+        final scale = _visionMaxDimension / longestSide;
+        image = img.copyResize(
+          image,
+          width: (image.width * scale).round(),
+          height: (image.height * scale).round(),
+          interpolation: img.Interpolation.cubic,
+        );
+      }
+
+      return _saveTmp(image, 'cropped', asPng: true);
+    } catch (e) {
+      debugPrint('Vision prep error: $e');
+      return source;
+    }
+  }
 
   static Future<ProcessedImage> _enhance(File source) async {
     final appliedSteps = <String>[];
@@ -116,90 +141,81 @@ class ImageService {
       img.Image? image = img.decodeImage(bytes);
 
       if (image == null) {
-        debugPrint('⚠️  Could not decode image — returning original');
         return ProcessedImage(
           file: source,
-          appliedSteps: ['Original (decode failed)'],
+          appliedSteps: ['Original image kept'],
         );
       }
 
-      // ── 1 · Straighten / auto-rotate based on EXIF ───────────────────
       image = img.bakeOrientation(image);
-      appliedSteps.add('Auto-rotated (EXIF)');
+      appliedSteps.add('Auto-rotated');
 
-      // ── 2 · Resize to processing target (max 2000px wide) ────────────
-      if (image.width > 2000) {
-        final scale = 2000 / image.width;
+      if (image.width > _ocrMaxWidth) {
+        final scale = _ocrMaxWidth / image.width;
         image = img.copyResize(
           image,
-          width: 2000,
+          width: _ocrMaxWidth,
           height: (image.height * scale).round(),
           interpolation: img.Interpolation.cubic,
         );
-        appliedSteps.add('Resized for processing');
+        appliedSteps.add('Resized for OCR');
       }
 
-      // ── 3 · Grayscale ────────────────────────────────────────────────
       image = img.grayscale(image);
       appliedSteps.add('Grayscale');
 
-      // ── 4 · Auto-levels (stretch histogram to full range) ────────────
       image = _autoLevels(image);
       appliedSteps.add('Auto-levels');
 
-      // ── 5 · Contrast enhancement ─────────────────────────────────────
       image = img.adjustColor(image, contrast: 1.3);
-      appliedSteps.add('Contrast +30%');
+      appliedSteps.add('Contrast boost');
 
-      // ── 6 · Unsharp mask (sharpen edges for OCR) ─────────────────────
       image = _unsharpMask(image, sigma: 1.5, strength: 0.6);
-      appliedSteps.add('Unsharp mask (sharpen)');
+      appliedSteps.add('Sharpened text');
 
-      // ── 7 · Adaptive binarization (Sauvola-inspired) ─────────────────
       image = _adaptiveBinarize(image, windowSize: 51, k: 0.15);
-      appliedSteps.add('Adaptive binarization');
+      appliedSteps.add('Adaptive threshold');
 
-      // ── 8 · Noise removal (median-like via slight blur + re-threshold) ─
       image = img.gaussianBlur(image, radius: 1);
       image = _threshold(image, 128);
-      appliedSteps.add('Noise removal');
+      appliedSteps.add('Noise cleanup');
 
-      // ── 9 · Compress & save to temp ──────────────────────────────────
-      final outFile = await _saveTmp(image, 'enhanced');
+      final outFile = await _saveTmp(image, 'enhanced', asPng: true);
       appliedSteps.add('Saved as PNG');
 
-      debugPrint('✅ Enhancement pipeline: ${appliedSteps.join(' → ')}');
       return ProcessedImage(file: outFile, appliedSteps: appliedSteps);
     } catch (e, st) {
-      debugPrint('❌ Enhancement error: $e\n$st');
+      debugPrint('Enhancement error: $e\n$st');
       return ProcessedImage(
         file: source,
-        appliedSteps: ['Original (enhancement failed)'],
+        appliedSteps: ['Original image kept'],
       );
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // IMAGE ALGORITHMS
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /// Stretch the image histogram so the darkest pixel → 0, brightest → 255.
   static img.Image _autoLevels(img.Image src) {
-    int minV = 255, maxV = 0;
+    int minV = 255;
+    int maxV = 0;
 
     for (final pixel in src) {
-      final v = pixel.r.toInt(); // grayscale — r == g == b
-      if (v < minV) minV = v;
-      if (v > maxV) maxV = v;
+      final value = pixel.r.toInt();
+      if (value < minV) {
+        minV = value;
+      }
+      if (value > maxV) {
+        maxV = value;
+      }
     }
 
     final range = (maxV - minV).toDouble();
-    if (range < 1) return src; // already flat
+    if (range < 1) {
+      return src;
+    }
 
     final dst = img.Image.from(src);
     for (final pixel in dst) {
-      final v = pixel.r.toInt();
-      final normalized = (((v - minV) / range) * 255).clamp(0, 255).toInt();
+      final value = pixel.r.toInt();
+      final normalized = (((value - minV) / range) * 255).clamp(0, 255).toInt();
       pixel.r = normalized;
       pixel.g = normalized;
       pixel.b = normalized;
@@ -207,7 +223,6 @@ class ImageService {
     return dst;
   }
 
-  /// Unsharp mask: sharpen by adding (original - blurred) * strength.
   static img.Image _unsharpMask(
     img.Image src, {
     double sigma = 1.5,
@@ -219,56 +234,57 @@ class ImageService {
 
     for (int y = 0; y < src.height; y++) {
       for (int x = 0; x < src.width; x++) {
-        final orig = src.getPixel(x, y).r.toInt();
-        final blur = blurred.getPixel(x, y).r.toInt();
-        final sharpened = (orig + (orig - blur) * strength)
+        final original = src.getPixel(x, y).r.toInt();
+        final blurredValue = blurred.getPixel(x, y).r.toInt();
+        final sharpened = (original + (original - blurredValue) * strength)
             .clamp(0, 255)
             .toInt();
         dst.setPixelRgb(x, y, sharpened, sharpened, sharpened);
       }
     }
+
     return dst;
   }
 
-  /// Adaptive binarization inspired by the Sauvola method.
-  /// Each pixel is thresholded against its local window's mean + variance.
   static img.Image _adaptiveBinarize(
     img.Image src, {
     int windowSize = 51,
     double k = 0.15,
   }) {
-    final w = src.width;
-    final h = src.height;
-    final half = windowSize ~/ 2;
+    final width = src.width;
+    final height = src.height;
+    final halfWindow = windowSize ~/ 2;
 
-    // Build integral image for fast mean computation
-    final integral = List.generate(h + 1, (_) => List<int>.filled(w + 1, 0));
-    final integral2 = List.generate(
-      h + 1,
-      (_) => List<double>.filled(w + 1, 0),
+    final integral = List.generate(
+      height + 1,
+      (_) => List<int>.filled(width + 1, 0),
+    );
+    final integralSquares = List.generate(
+      height + 1,
+      (_) => List<double>.filled(width + 1, 0),
     );
 
-    for (int y = 0; y < h; y++) {
-      for (int x = 0; x < w; x++) {
-        final v = src.getPixel(x, y).r.toInt();
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final value = src.getPixel(x, y).r.toInt();
         integral[y + 1][x + 1] =
-            v + integral[y][x + 1] + integral[y + 1][x] - integral[y][x];
-        integral2[y + 1][x + 1] =
-            v * v.toDouble() +
-            integral2[y][x + 1] +
-            integral2[y + 1][x] -
-            integral2[y][x];
+            value + integral[y][x + 1] + integral[y + 1][x] - integral[y][x];
+        integralSquares[y + 1][x + 1] =
+            value * value.toDouble() +
+            integralSquares[y][x + 1] +
+            integralSquares[y + 1][x] -
+            integralSquares[y][x];
       }
     }
 
-    final dst = img.Image(width: w, height: h);
+    final dst = img.Image(width: width, height: height);
 
-    for (int y = 0; y < h; y++) {
-      for (int x = 0; x < w; x++) {
-        final x1 = math.max(0, x - half);
-        final y1 = math.max(0, y - half);
-        final x2 = math.min(w - 1, x + half);
-        final y2 = math.min(h - 1, y + half);
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final x1 = math.max(0, x - halfWindow);
+        final y1 = math.max(0, y - halfWindow);
+        final x2 = math.min(width - 1, x + halfWindow);
+        final y2 = math.min(height - 1, y + halfWindow);
 
         final count = (x2 - x1 + 1) * (y2 - y1 + 1);
         final sum =
@@ -276,64 +292,60 @@ class ImageService {
             integral[y1][x2 + 1] -
             integral[y2 + 1][x1] +
             integral[y1][x1];
-        final sum2 =
-            integral2[y2 + 1][x2 + 1] -
-            integral2[y1][x2 + 1] -
-            integral2[y2 + 1][x1] +
-            integral2[y1][x1];
+        final squareSum =
+            integralSquares[y2 + 1][x2 + 1] -
+            integralSquares[y1][x2 + 1] -
+            integralSquares[y2 + 1][x1] +
+            integralSquares[y1][x1];
 
         final mean = sum / count;
-        final variance = (sum2 / count) - (mean * mean);
+        final variance = (squareSum / count) - (mean * mean);
         final stddev = math.sqrt(math.max(0, variance));
-
-        // Sauvola threshold formula
         final threshold = mean * (1 + k * (stddev / 128.0 - 1));
 
-        final v = src.getPixel(x, y).r.toInt();
-        final out = v >= threshold ? 255 : 0;
-        dst.setPixelRgb(x, y, out, out, out);
+        final value = src.getPixel(x, y).r.toInt();
+        final output = value >= threshold ? 255 : 0;
+        dst.setPixelRgb(x, y, output, output, output);
       }
     }
 
     return dst;
   }
 
-  /// Hard threshold: pixels above [level] → white, below → black.
   static img.Image _threshold(img.Image src, int level) {
     final dst = img.Image.from(src);
     for (final pixel in dst) {
-      final v = pixel.r.toInt() >= level ? 255 : 0;
-      pixel.r = v;
-      pixel.g = v;
-      pixel.b = v;
+      final value = pixel.r.toInt() >= level ? 255 : 0;
+      pixel.r = value;
+      pixel.g = value;
+      pixel.b = value;
     }
     return dst;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // UTILITIES
-  // ─────────────────────────────────────────────────────────────────────────
-
-  static Future<File> _saveTmp(img.Image image, String tag) async {
+  static Future<File> _saveTmp(
+    img.Image image,
+    String tag, {
+    required bool asPng,
+  }) async {
     final dir = await getTemporaryDirectory();
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    final path = '${dir.path}/${tag}_$ts.png';
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final extension = asPng ? 'png' : 'jpg';
+    final path = '${dir.path}/${tag}_$timestamp.$extension';
     final file = File(path);
-    await file.writeAsBytes(img.encodePng(image));
+    final bytes = asPng
+        ? img.encodePng(image)
+        : img.encodeJpg(image, quality: 95);
+    await file.writeAsBytes(bytes);
     return file;
   }
 
-  // Needed only for WebUiSettings — on mobile this is never called.
   static BuildContext? _navigatorContext;
 
-  /// Call this once in your app's root widget if you target web.
   static void setContext(BuildContext ctx) => _navigatorContext = ctx;
 
-  // ── Legacy compat: old call sites that just want a File? ──────────────
-  /// Deprecated — use [cropAndEnhance] instead.
-  @Deprecated('Use cropAndEnhance() which returns a ProcessedImage')
+  @Deprecated('Use cropForHomework() instead.')
   static Future<File?> cropImage(String path) async {
-    final result = await cropAndEnhance(path);
-    return result?.file;
+    return cropForHomework(path);
   }
 }

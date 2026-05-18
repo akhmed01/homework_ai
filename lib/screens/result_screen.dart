@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../models/message.dart';
 import '../services/ai_service.dart';
 import '../services/history_service.dart';
+import '../services/image_service.dart';
 import '../services/pdf_service.dart';
 import '../services/study_planner_service.dart';
 import '../services/user_profile_service.dart';
@@ -52,7 +53,9 @@ class _ResultScreenState extends State<ResultScreen> {
 
   Future<void> _autoSolve() async {
     await _sendToAI();
-    await HistoryService.saveProblem(widget.text);
+    if (widget.text.trim().isNotEmpty) {
+      await HistoryService.saveProblem(widget.text);
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -146,11 +149,22 @@ class _ResultScreenState extends State<ResultScreen> {
   }
 
   Future<void> _pickImage(ImageSource source) async {
-    final picked = await ImagePicker().pickImage(source: source);
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      imageQuality: 100,
+      preferredCameraDevice: CameraDevice.rear,
+      requestFullMetadata: true,
+    );
     if (picked == null) {
       return;
     }
-    setState(() => _pendingImage = File(picked.path));
+
+    final cropped = await ImageService.cropForHomework(picked.path);
+    if (!mounted || cropped == null) {
+      return;
+    }
+
+    setState(() => _pendingImage = cropped);
   }
 
   Future<void> _importPdf() async {

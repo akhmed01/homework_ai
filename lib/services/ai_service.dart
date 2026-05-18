@@ -219,7 +219,10 @@ class AIService {
             'content': [
               {
                 'type': 'image_url',
-                'image_url': {'url': 'data:image/jpeg;base64,$base64Image'},
+                'image_url': {
+                  'url':
+                      'data:${_mimeTypeForFile(message.image!)};base64,$base64Image',
+                },
               },
               if (message.text.isNotEmpty)
                 {'type': 'text', 'text': _clean(message.text)},
@@ -239,5 +242,25 @@ class AIService {
   static Future<String> _toBase64(File file) async {
     final bytes = await file.readAsBytes();
     return base64Encode(bytes);
+  }
+
+  static String _mimeTypeForFile(File file) {
+    final lowerPath = file.path.toLowerCase();
+    if (lowerPath.endsWith('.png')) {
+      return 'image/png';
+    }
+    if (lowerPath.endsWith('.webp')) {
+      return 'image/webp';
+    }
+    if (lowerPath.endsWith('.heic')) {
+      return 'image/heic';
+    }
+    if (lowerPath.endsWith('.heif')) {
+      return 'image/heif';
+    }
+    if (lowerPath.endsWith('.gif')) {
+      return 'image/gif';
+    }
+    return 'image/jpeg';
   }
 }
