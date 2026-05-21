@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../models/message.dart';
 import '../services/ai_service.dart';
+import '../services/history_service.dart';
 import '../services/image_service.dart';
 import '../services/pdf_service.dart';
 import '../services/study_planner_service.dart';
@@ -56,6 +57,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _input.clear();
     _scrollToBottom();
+    await _saveToHistorySafe(text);
 
     try {
       final reply = await AIService.chat(
@@ -96,6 +98,66 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _saveToHistorySafe(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    try {
+      await HistoryService.saveProblem(trimmed);
+    } catch (_) {
+      // Keep chat flow running even if local history storage fails.
+    }
+  }
+
+  Future<void> _startNewChat() async {
+    if (_loading) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please wait for the current reply to finish.'),
+        ),
+      );
+      return;
+    }
+
+    final hasDraft = _input.text.trim().isNotEmpty || _pendingImage != null;
+    final hasConversation = _messages.isNotEmpty;
+    if (!hasDraft && !hasConversation) {
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Start new chat?'),
+        content: const Text(
+          'This will clear the current conversation and draft message.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('New chat'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _messages.clear();
+      _input.clear();
+      _pendingImage = null;
+    });
+    _focusNode.requestFocus();
   }
 
   void _retryLast() {
@@ -393,35 +455,11 @@ class _ChatScreenState extends State<ChatScreen> {
               tooltip: 'Export chat as PDF',
               onPressed: _exportChat,
             ),
-          if (_messages.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.delete_sweep_outlined),
-              tooltip: 'Clear chat',
-              onPressed: () {
-                showDialog<void>(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    title: const Text('Clear chat?'),
-                    content: const Text(
-                      'This will delete the whole conversation.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel'),
-                      ),
-                      FilledButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          setState(() => _messages.clear());
-                        },
-                        child: const Text('Clear'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+          IconButton(
+            icon: const Icon(Icons.add_comment_outlined),
+            tooltip: 'New chat',
+            onPressed: _startNewChat,
+          ),
         ],
       ),
       body: Column(

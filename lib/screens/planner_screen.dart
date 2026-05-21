@@ -263,7 +263,7 @@ class PlannerScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 18),
                     SizedBox(
-                      height: 140,
+                      height: 172,
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: weeklyBars
@@ -488,7 +488,34 @@ class _TaskEditorSheetState extends State<_TaskEditorSheet> {
     }
 
     setState(() {
-      _dueDate = DateTime(picked.year, picked.month, picked.day, 18);
+      _dueDate = DateTime(
+        picked.year,
+        picked.month,
+        picked.day,
+        _dueDate.hour,
+        _dueDate.minute,
+      );
+    });
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: _dueDate.hour, minute: _dueDate.minute),
+    );
+
+    if (picked == null) {
+      return;
+    }
+
+    setState(() {
+      _dueDate = DateTime(
+        _dueDate.year,
+        _dueDate.month,
+        _dueDate.day,
+        picked.hour,
+        picked.minute,
+      );
     });
   }
 
@@ -590,6 +617,18 @@ class _TaskEditorSheetState extends State<_TaskEditorSheet> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _pickTime,
+                      icon: const Icon(Icons.schedule),
+                      label: Text(_formatTime(_dueDate)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
                     child: DropdownButtonFormField<int>(
                       initialValue: _estimatedMinutes,
                       items: const [15, 30, 45, 60, 90]
@@ -674,6 +713,12 @@ class _TaskEditorSheetState extends State<_TaskEditorSheet> {
   String _formatDate(DateTime date) {
     final month = _monthLabel(date.month);
     return '$month ${date.day}, ${date.year}';
+  }
+
+  String _formatTime(DateTime date) {
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 
   String _monthLabel(int month) {
@@ -830,7 +875,7 @@ class _ReminderTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${task.subject} • ${_relativeDue(task.dueDate)}',
+                  '${task.subject} | ${_relativeDue(task.dueDate)}',
                   style: theme.textTheme.bodySmall,
                 ),
               ],
@@ -933,7 +978,9 @@ class _TaskTile extends StatelessWidget {
   }
 
   String _formatDueDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '${date.day}/${date.month}/${date.year} $hour:$minute';
   }
 }
 
@@ -952,7 +999,7 @@ class _StudyBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final ratio = maxMinutes <= 0 ? 0.0 : minutes / maxMinutes;
-    final height = 26 + (ratio * 84);
+    final height = 26 + (ratio * 70);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -960,7 +1007,7 @@ class _StudyBar extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           Text('$minutes', style: theme.textTheme.labelSmall),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             width: 26,
@@ -970,7 +1017,7 @@ class _StudyBar extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(label, style: theme.textTheme.labelMedium),
         ],
       ),

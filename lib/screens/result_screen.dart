@@ -52,9 +52,19 @@ class _ResultScreenState extends State<ResultScreen> {
   }
 
   Future<void> _autoSolve() async {
+    await _saveToHistorySafe(widget.text);
     await _sendToAI();
-    if (widget.text.trim().isNotEmpty) {
-      await HistoryService.saveProblem(widget.text);
+  }
+
+  Future<void> _saveToHistorySafe(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    try {
+      await HistoryService.saveProblem(trimmed);
+    } catch (_) {
+      // Keep the solve flow running even if local history storage fails.
     }
   }
 

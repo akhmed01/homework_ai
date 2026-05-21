@@ -13,6 +13,14 @@ if (keyPropertiesFile.exists()) {
     keyProperties.load(FileInputStream(keyPropertiesFile))
 }
 
+fun requireKeyProperty(name: String): String {
+    val value =
+        keyProperties.getProperty(name)
+            ?: keyProperties.getProperty("\uFEFF$name") // handle accidental UTF-8 BOM on first key
+    return value?.trim()?.takeIf { it.isNotEmpty() }
+        ?: throw GradleException("Missing `$name` in ${keyPropertiesFile.path}")
+}
+
 android {
     namespace = "kz.alga.homework_ai"
     compileSdk = flutter.compileSdkVersion
@@ -21,10 +29,11 @@ android {
     signingConfigs {
         if (keyPropertiesFile.exists()) {
             create("release") {
-                keyAlias = keyProperties["keyAlias"] as String
-                keyPassword = keyProperties["keyPassword"] as String
-                storeFile = file(keyProperties["storeFile"] as String)
-                storePassword = keyProperties["storePassword"] as String
+                keyAlias = requireKeyProperty("keyAlias")
+                keyPassword = requireKeyProperty("keyPassword")
+                // Resolve from android/ root, not android/app/
+                storeFile = rootProject.file(requireKeyProperty("storeFile"))
+                storePassword = requireKeyProperty("storePassword")
             }
         }
     }
@@ -32,6 +41,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -62,4 +72,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }

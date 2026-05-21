@@ -3,6 +3,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 
 import 'screens/navigation_screen.dart';
+import 'services/notification_service.dart';
 import 'services/study_planner_service.dart';
 import 'services/theme_service.dart';
 import 'services/user_profile_service.dart';
@@ -15,6 +16,7 @@ Future<void> main() async {
   } catch (_) {
     debugPrint('.env file not found, using --dart-define values');
   }
+  await NotificationService.instance.init();
 
   runApp(
     MultiProvider(

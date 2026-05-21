@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/study_session.dart';
 import '../models/study_task.dart';
+import 'notification_service.dart';
 
 class StudyPlannerService extends ChangeNotifier {
   static const String _tasksKey = 'study_tasks_v1';
@@ -170,6 +171,7 @@ class StudyPlannerService extends ChangeNotifier {
     }
 
     _isLoaded = true;
+    await NotificationService.instance.rescheduleAll(_tasks);
     notifyListeners();
   }
 
@@ -200,29 +202,40 @@ class StudyPlannerService extends ChangeNotifier {
       ),
     ];
     await _persistTasks();
+    await NotificationService.instance.scheduleTaskReminders(_tasks.last);
     notifyListeners();
   }
 
   Future<void> toggleTaskCompletion(String id) async {
+    StudyTask? updatedTask;
     _tasks = _tasks.map((task) {
       if (task.id != id) {
         return task;
       }
 
       final completed = !task.completed;
-      return task.copyWith(
+      updatedTask = task.copyWith(
         completed: completed,
         completedAt: completed ? DateTime.now() : null,
         clearCompletedAt: !completed,
       );
+      return updatedTask!;
     }).toList();
     await _persistTasks();
+    if (updatedTask != null) {
+      if (updatedTask!.completed) {
+        await NotificationService.instance.cancelTaskReminders(updatedTask!.id);
+      } else {
+        await NotificationService.instance.scheduleTaskReminders(updatedTask!);
+      }
+    }
     notifyListeners();
   }
 
   Future<void> deleteTask(String id) async {
     _tasks.removeWhere((task) => task.id == id);
     await _persistTasks();
+    await NotificationService.instance.cancelTaskReminders(id);
     notifyListeners();
   }
 
