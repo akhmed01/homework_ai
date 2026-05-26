@@ -10,12 +10,7 @@ import 'services/user_profile_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  try {
-    await dotenv.load(fileName: '.env');
-  } catch (_) {
-    debugPrint('.env file not found, using --dart-define values');
-  }
+  await dotenv.load(fileName: '.env');
   await NotificationService.instance.init();
 
   runApp(
