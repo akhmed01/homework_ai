@@ -128,9 +128,9 @@ class AIService {
     String? studentName,
     String? studentGradeLevel,
   }) async {
-    if (_apiKey.isEmpty) {
+    if (!AppConfig.hasAiProxyUrl && _apiKey.isEmpty) {
       throw Exception(
-        'Missing GROQ_API_KEY. Pass --dart-define=GROQ_API_KEY=your_key',
+        'Missing configuration. Set AI_PROXY_URL (recommended) or GROQ_API_KEY for local development.',
       );
     }
 
@@ -150,16 +150,9 @@ class AIService {
       try {
         final response = await http
             .post(
-              Uri.parse(_url),
-              headers: {
-                'Authorization': 'Bearer $_apiKey',
-                'Content-Type': 'application/json',
-              },
-              body: jsonEncode({
-                'model': model,
-                'messages': apiMessages,
-                'temperature': 0.2,
-              }),
+              Uri.parse(AppConfig.hasAiProxyUrl ? AppConfig.aiProxyUrl : _url),
+              headers: _requestHeaders(),
+              body: jsonEncode(_requestBody(model, apiMessages)),
             )
             .timeout(const Duration(seconds: 40));
 
@@ -237,6 +230,29 @@ class AIService {
     }
 
     return result;
+  }
+
+  static Map<String, String> _requestHeaders() {
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    if (AppConfig.hasAiProxyUrl) {
+      if (AppConfig.hasAiProxyClientToken) {
+        headers['X-Client-Token'] = AppConfig.aiProxyClientToken;
+      }
+    } else {
+      headers['Authorization'] = 'Bearer $_apiKey';
+    }
+    return headers;
+  }
+
+  static Map<String, dynamic> _requestBody(
+    String model,
+    List<Map<String, dynamic>> messages,
+  ) {
+    return {
+      'model': model,
+      'messages': messages,
+      'temperature': 0.2,
+    };
   }
 
   static Future<String> _toBase64(File file) async {
